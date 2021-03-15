@@ -1,0 +1,3 @@
+[submodule "src/hypergradient-descent"]
+	path = src/hypergradient-descent
+	url = https://github.com/gbaydin/hypergradient-descent.git
