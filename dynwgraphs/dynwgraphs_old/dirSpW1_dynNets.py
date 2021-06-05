@@ -73,8 +73,7 @@ class dirSpW1_staNet(object):
 
     @staticmethod
     def identify(phi, id_type=1):
-        """ enforce an identification condition on the parameters of ZA gamma net
-        model
+        """ enforce an identification condition on the parameters of ZA gamma net model
         """
         # set the first in parameter to zero
         phi_i, phi_o = splitVec(phi)
@@ -879,7 +878,7 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
 
     def sd_filt(self, w, B, A, Y_T, beta_const=None, X_T=None,
                 sd_par_0=None, dist_par_un=torch.zeros(1)):
-        """given the static parameters,  and the observations fiter the dynamical
+        """given the static parameters and the observations, fiter the dynamical
         parameters with  score driven dynamics.
         """
         N_beta_tv = self.n_reg_beta_tv * self.dim_beta

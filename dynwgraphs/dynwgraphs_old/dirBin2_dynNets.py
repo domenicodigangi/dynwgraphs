@@ -1,8 +1,16 @@
+#########
+#Created Date: Monday March 15th 2021
+#Author: Domenico Di Gangi,  <digangidomenico@gmail.com>
+#-----
+#Last Modified: Thursday June 3rd 2021 7:06:18 am
+#Modified By:  Domenico Di Gangi
+#-----
+#Description: Functions for Zero Augmented models for Score driven erdos reny, coded using pytorch
+#-----
+########
+
+
 """
-
-Functions for Zero Augmented models for Score driven erdos reny, coded using pytorch
-Author: Domenico Di Gangi
-
 TO DO:  1) DONE- add regressors
         2) consider diferent distributions
 
