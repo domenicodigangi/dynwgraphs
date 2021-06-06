@@ -10,7 +10,7 @@ import sys
 import numpy as np
 import os
 sys.path.append("./src/")
-from utils import splitVec, tens, putZeroDiag, putZeroDiag_T, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
+from .utils import splitVec, tens, putZeroDiag, putZeroDiag_T, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
     degIO_from_mat, strIO_from_mat, tic, toc
 from torch.autograd import grad
 #----------------------------------- Zero Augmented Static model functions
@@ -20,8 +20,7 @@ from torch.autograd import grad
 
 class dirSpW1_staNet(object):
     """
-    This a class  for directed weighted sparse static networks (or sequences), modelled with a zero augmented
-    distribution, one  parameter per each node (hence the 1 in the name)
+    This a class  for directed weighted sparse static networks (or sequences), modelled with a zero augmented distribution, one  parameter per each node (hence the 1 in the name)
     """
 
     def __init__(self, ovflw_lm=True, distribution='gamma'):

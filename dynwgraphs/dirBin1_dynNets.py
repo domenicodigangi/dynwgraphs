@@ -1,7 +1,6 @@
 """
 
-dirBin1_Nets :  directed binary model with one parameter per node, aka theta
-                model, directed configuration model, fitness model etc
+dirBin1_Nets :  directed binary model with one parameter per node, aka theta model, directed configuration model, fitness model etc
 
                 With the possibility to add one or more  regressors per link
 
@@ -10,11 +9,11 @@ dirBin1_Nets :  directed binary model with one parameter per node, aka theta
 import torch
 import sys
 sys.path.append("./src/")
-from utils import splitVec, tens, putZeroDiag, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
+from .utils import splitVec, tens, putZeroDiag, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
     degIO_from_mat, strIO_from_mat, tic, toc, rand_steps, dgpAR, putZeroDiag_T
 from torch.autograd import grad
 import numpy as np
-from dirSpW1_dynNets import dirSpW1_dynNet_SD, dirSpW1_staNet
+from .dirSpW1_dynNets import dirSpW1_dynNet_SD, dirSpW1_staNet
 #-----------------------------------  Static model functions
 
 
@@ -26,7 +25,6 @@ class dirBin1_staNet(dirSpW1_staNet):
         self.ovflw_exp_L_limit = -50
         self.ovflw_exp_U_limit = 40
 
-    #--------------------------------------
     # remove methods that do not make sense in the binary case
     def cond_exp_Y(self):
         """cond exp not needed for binary networks"""
@@ -38,19 +36,9 @@ class dirBin1_staNet(dirSpW1_staNet):
     def dist_par_un_start_val(self, dim_dist_par_un=1):
         return None
 
-    def estimate_dist_par_const_given_phi_T(self, Y_T, phi_T, dim_dist_par_un, X_T=None, beta=None,
-                                            dist_par_un_0=None, like_type=2,
-                                            min_n_iter=200,
-                                            opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False,
-                                            print_every=10):
+    def estimate_dist_par_const_given_phi_T(self, Y_T, phi_T, dim_dist_par_un, X_T=None, beta=None, dist_par_un_0=None, like_type=2, min_n_iter=200, opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10):
         return None, 0
-
-    #--------------------------------------
-
-
-
-
-
+   
     def invPiMat(self, phi, beta=None, X_t=None, ret_log=False):
         """
         given the vector of unrestricted parameters, return the matrix of
@@ -63,9 +51,7 @@ class dirBin1_staNet(dirSpW1_staNet):
             log_inv_pi_mat = log_inv_pi_mat + self.regr_product(beta, X_t)
         if self.ovflw_lm:
             """if required force the exponent to stay whithin overflow-safe bounds"""
-            log_inv_pi_mat =  soft_lu_bound(log_inv_pi_mat, l_limit=self.ovflw_exp_L_limit, \
-                                            u_limit=self.ovflw_exp_U_limit)
-
+            log_inv_pi_mat =  soft_lu_bound(log_inv_pi_mat, l_limit=self.ovflw_exp_L_limit, u_limit=self.ovflw_exp_U_limit)
 
         if ret_log:
             return putZeroDiag(log_inv_pi_mat)
@@ -131,7 +117,6 @@ class dirBin1_staNet(dirSpW1_staNet):
             par_i, par_o = splitVec(phi)
             zero_deg_par_i = - par_o.max() + torch.log(max_prob/N)
             zero_deg_par_o = - par_i.max() + torch.log(max_prob/N)
-
 
         return zero_deg_par_i, zero_deg_par_o
 
@@ -199,8 +184,7 @@ class dirBin1_staNet(dirSpW1_staNet):
                                     opt_steps=5000, opt_n=1, lRate=0.01,
                                     print_flag=True, plot_flag=False, print_every=10):
         """
-        single snapshot Maximum logLikelihood estimate of phi_t for binary networks using only the degrees
-        does no work with regressors
+        single snapshot Maximum logLikelihood estimate of phi_t for binary networks using only the degrees - does no work with regressors
         """
         def obj_fun(unPar):
             return - self.loglike_t(torch.zeros(3, 3), unPar, degIO=degIO, like_type=0)
@@ -217,11 +201,7 @@ class dirBin1_staNet(dirSpW1_staNet):
         return all_par_est, diag
 
 
-    def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dim_beta, dist_par_un,  beta_0=None, like_type=0,
-                                          opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False,
-                                            print_every=10,
-                                            rel_improv_tol=5 * 1e-7, no_improv_max_count=30,
-                                            min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
+    def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dim_beta, dist_par_un,  beta_0=None, like_type=0, opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10, rel_improv_tol=5 * 1e-7, no_improv_max_count=30, min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
             """single snapshot Maximum logLikelihood estimate given beta_t"""
             T = Y_T.shape[2]
             n_reg = X_T.shape[2]
@@ -642,19 +622,7 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
         A0 = torch.ones(2*N_BA) * 0.01
         W0 = phi_ss_est_T_0.mean(dim=1) * (1 - B0)
         if not regr_flag:
-            W_est, B_est, A_est, dist_par_un_est, sd_par_0, diag = model.estimate_SD(Y_T, B0=B0, A0=A0, W0=W0,
-                                                                            opt_steps=N_steps,
-                                                                           lRate=learn_rate,
-                                                                           sd_par_0=phi_ss_est_T_0[:, :5].mean(dim=1),
-                                                                           print_flag=True, print_every=print_every,
-                                                                           plot_flag=False,
-                                                                           est_dis_par_un=False,
-                                                                           init_filt_um=False,
-                                                                           rel_improv_tol=rel_improv_tol_SD,
-                                                                           no_improv_max_count=no_improv_max_count_SD,
-                                                                           min_n_iter=min_n_iter_SD,
-                                                                           bandwidth=bandwidth_SD,
-                                                                           small_grad_th=1e-6)
+            W_est, B_est, A_est, dist_par_un_est, sd_par_0, diag = model.estimate_SD(Y_T, B0=B0, A0=A0, W0=W0, opt_steps=N_steps, lRate=learn_rate, sd_par_0=phi_ss_est_T_0[:, :5].mean(dim=1), print_flag=True, print_every=print_every, plot_flag=False, est_dis_par_un=False, init_filt_um=False, rel_improv_tol=rel_improv_tol_SD, no_improv_max_count=no_improv_max_count_SD, min_n_iter=min_n_iter_SD, bandwidth=bandwidth_SD, small_grad_th=1e-6)
 
             file_path = SAVE_FOLD + '/dirBin1_SD_est_lr_' + \
                         str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + 'T_test_' + str(T_test) + \
