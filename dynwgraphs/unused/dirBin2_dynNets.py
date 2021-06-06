@@ -2,7 +2,7 @@
 #Created Date: Monday March 15th 2021
 #Author: Domenico Di Gangi,  <digangidomenico@gmail.com>
 #-----
-#Last Modified: Thursday June 3rd 2021 7:06:18 am
+#Last Modified: Sunday June 6th 2021 4:27:20 pm
 #Modified By:  Domenico Di Gangi
 #-----
 #Description: Functions for Zero Augmented models for Score driven erdos reny, coded using pytorch
@@ -19,7 +19,7 @@ import torch
 import sys
 import numpy as np
 sys.path.append("./src/")
-from utils import splitVec, tens, putZeroDiag, putZeroDiag_T, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
+from .utils import splitVec, tens, putZeroDiag, putZeroDiag_T, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
     degIO_from_mat, strIO_from_mat, tic, toc
 from torch.autograd import grad
 #----------------------------------- Zero Augmented Static model functions
