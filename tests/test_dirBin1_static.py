@@ -1,44 +1,40 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Aug 13 17:56:03 2019
+#########
+#Created Date: Sunday June 6th 2021
+#Author: Domenico Di Gangi,  <digangidomenico@gmail.com>
+#-----
+#Last Modified: Sunday June 6th 2021 7:28:04 pm
+#Modified By:  Domenico Di Gangi
+#-----
+#Description:
+#-----
+########
 
-@author: domenico
-"""
 
 #%% import packages
-from dynwgraphs.utils import splitVec, tens, putZeroDiag, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound, degIO_from_mat, strIO_from_mat, tic, toc, rand_steps, dgpAR, putZeroDiag_T, tens, strIO_from_mat
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from dirBin1_dynNets import  dirBin1_staNet, dirBin1_dynNet_SD
+
+from dynwgraphs.dirBin1_dynNets import  dirBin1_staNet, dirBin1_dynNet_SD
+from dynwgraphs.utils import splitVec, tens, putZeroDiag, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound, degIO_from_mat, strIO_from_mat, tic, toc, rand_steps, dgpAR, putZeroDiag_T, tens, strIO_from_mat
 
 
-#%% Load eMid Data
+#%% 
+test_data = np.load("../tests/test_data/dir_w_test_data.npz")
+Y_T = tens(test_data["Y_T"]>0)
+X_T = tens(test_data["X_T"])
 
-ld_data = np.load("../../data/emid_data/numpyFiles/eMid_numpy.npz",
-                  allow_pickle=True)
-
-eMid_w_T, all_dates, eonia_w, nodes = ld_data["arr_0"], ld_data["arr_1"], ld_data["arr_2"], ld_data["arr_3"]
-
-
-Y_T = tens(eMid_w_T[:, :, 1:] > 0)
-N = Y_T.shape[0]
-T = Y_T.shape[2]
-T_train = 100
-T_test = T - T_train  # T//5
-t =T -2
-Y_t = Y_T[:, :, t]
-A_t = Y_t>0
-Y_tp1 = Y_T[:, :, t+1]
 #%% Test single snapshot estimates of  phi
+t=0
+Y_t = Y_T[:, :, t]
 model = dirBin1_dynNet_SD(ovflw_lm=False)
 model.distr = 'bernoulli'
-phi_0 = model.start_phi_from_obs(Y_t, n_iter = 20)
+phi_0 = model.start_phi_from_obs(Y_t, n_iter = 30)
 phi_0 = model.identify(phi_0)
 model.exp_A(phi_0).sum(dim=1)
 Y_t.sum(dim=1)
 
+model.check_tot_exp(Y_t, phi_0)
 
 model.zero_deg_par_fun(Y_t, phi_0)
 model.identify(model.set_zero_deg_par(Y_t, phi_0))
@@ -51,7 +47,6 @@ phi[N:][phi[N:] == 0] = zero_deg_par_o
 
 phi_ss_t, diag_iter =  model.estimate_ss_t(Y_t, phi_0=phi_0, plot_flag=False, print_flag=True, opt_steps=2500,
                                              dist_par_un_t=None, print_every=500)
-diag.append(diag_iter)
 print(model.check_tot_exp(Y_t, phi_ss_t) )
 
 #%% test quick ss estimate
@@ -67,6 +62,7 @@ model.exp_A(phi_t).sum()
 print(model.check_tot_exp(Y_t, phi_t))
 
 #%% Test joint ss estimates of phi and beta
+X_t = X_T[t].unsqueeze(1).unsqueeze(1)
 model = dirBin1_dynNet_SD()
 par_ss_t, diag = model.estimate_ss_t( Y_t, X_t=X_t, beta_t=None, phi_0=None, dist_par_un_t=None, like_type=2,
                                      est_beta=True, dim_beta=1,
