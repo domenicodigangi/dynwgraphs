@@ -23,25 +23,26 @@ class dirSpW1_staNet(object):
     This a class  for directed weighted sparse static networks (or sequences), modelled with a zero augmented distribution, one  parameter per each node (hence the 1 in the name)
     """
 
-    def __init__(self, ovflw_lm=True, distribution='gamma'):
+    def __init__(self, ovflw_lm=True, distr='gamma'):
         self.ovflw_lm = ovflw_lm
-        self.distr = distribution
+        self.distr = distr
 
         self.ovflw_exp_L_limit = -50
         self.ovflw_exp_U_limit = 40
 
-    @staticmethod
-    def regr_product(beta, X_t):
+    def regr_product(self, beta, X_t):
         """
-        Given a matrix of regressors and a vector of parameters obtain a matrix that will be sum to the matrix obtained
+        Given a matrix of regressors and a vector of parameters obtain a
+        matrix that will be sum to the matrix obtained
         from of nodes specific unrestricted dynamical paramters
         """
         if not (X_t.dim() == 3):
             raise
         N = X_t.shape[0]
-        if beta.shape[0] == 1: # one parameter for all links
+        if beta.shape[0] == 1:  # one parameter for all links
             prod = beta * X_t
-        elif beta.shape[0] == N: # one parameter for each node for each regressor
+        elif beta.shape[0] == N:
+            # one parameter for each node for each regressor
             prod = torch.mul(beta * beta.unsqueeze(1), X_t)
         return prod.sum(dim=2)
 
@@ -66,12 +67,13 @@ class dirSpW1_staNet(object):
         if ret_all:
             return log_Econd_mat, log_Econd_mat_restr, torch.exp(log_Econd_mat_restr)
         elif ret_log:
-            return log_Econd_mat_restr #putZeroDiag(log_Econd_mat)
+            return log_Econd_mat_restr
+            #  putZeroDiag(log_Econd_mat)
         else:
-            return torch.exp(log_Econd_mat_restr)# putZeroDiag(torch.exp(log_Econd_mat))
+            return torch.exp(log_Econd_mat_restr)  
+            #  putZeroDiag(torch.exp(log_Econd_mat))
 
-    @staticmethod
-    def identify(phi, id_type=1):
+    def identify(self, phi, id_type=1):
         """ enforce an identification condition on the parameters of ZA gamma net model
         """
         # set the first in parameter to zero
@@ -210,17 +212,16 @@ class dirSpW1_staNet(object):
             dist_par_un0 = torch.zeros(dim_dist_par_un)
         return dist_par_un0
 
-
     def estimate_ss_t(self, Y_t, X_t=None, beta_t=None, phi_0=None, dist_par_un_t=None, like_type=2,
                         est_dist_par=False, dim_dist_par_un=1, est_beta=False, dim_beta = 1, min_n_iter=200,
                         opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10):
         """
-        single snapshot Maximum logLikelihood estimate of phi_t, and if not given also of dist_par_un_t and  beta_t
+        single snapshot Maximum logLikelihood estimate of phi_t and, if not given as input, also of dist_par_un_t and beta_t
         """
 
         N = Y_t.shape[0]
 
-        # Define starting values, if an inut is given but the parameter has to be estimateduse input as starting value
+        # Define starting values, if an inut is given but the parameter has to be estimated use input as starting value
         # starting value for phi_t
         if phi_0 is None:
             phi_0 = self.start_phi_from_obs(Y_t)
@@ -288,7 +289,6 @@ class dirSpW1_staNet(object):
 
         return all_par_est, diag
 
-
     def ss_filt(self, Y_T, X_T=None, beta=None, phi_T_0=None, dist_par_un=None, like_type=2,
                 est_dist_par=False, dim_dist_par_un=1, est_beta=False, dim_beta = 1,
                 opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10,
@@ -342,7 +342,6 @@ class dirSpW1_staNet(object):
             # print(t)
         return all_par_est_T, diag_T
 
-
     def estimate_dist_par_const_given_phi_T(self, Y_T, phi_T, dim_dist_par_un, X_T=None, beta=None,
                                             dist_par_un_0=None, like_type=2,
                                             opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False,
@@ -378,7 +377,6 @@ class dirSpW1_staNet(object):
 
         return dist_par_un_est, diag
 
-
     def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dim_beta, dist_par_un,  beta_0=None, like_type=2,
                                         opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False,
                                         print_every=10,
@@ -411,7 +409,6 @@ class dirSpW1_staNet(object):
 
         beta_t_est = beta_t_est_flat.view(dim_beta, n_reg)
         return beta_t_est, diag
-
 
     def ss_filt_est_beta_dist_par_const(self, Y_T, X_T=None, beta=None, phi_T=None, dist_par_un=None, like_type=2,
                                           est_const_dist_par=False, dim_dist_par_un=1,
@@ -656,21 +653,18 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
         will be flexible but for the moment we have a single parameter equal for all links
         """
 
-    def __init__(self, ovflw_lm=False, distribution='gamma', rescale_SD=False, backprop_sd=False):
-        dirSpW1_staNet.__init__(self, ovflw_lm=ovflw_lm, distribution=distribution)
+    def __init__(self, ovflw_lm=False, distr='gamma', rescale_SD=False, backprop_sd=False):
+        dirSpW1_staNet.__init__(self, ovflw_lm=ovflw_lm, distr=distr)
         self.rescale_SD = rescale_SD
         self.n_reg_beta_tv = 0
         self.dim_beta = 1
         self.backprop_sd = backprop_sd
 
-
-    @staticmethod
     def un2re_BA_par( BA_un):
         B_un, A_un = splitVec(BA_un)
         exp_B = torch.exp(B_un)
         return torch.cat((torch.div(exp_B, (1 + exp_B)), torch.exp(A_un)))
 
-    @staticmethod
     def re2un_BA_par(BA_re):
         B_re, A_re = splitVec(BA_re)
         return torch.cat((torch.log(torch.div(B_re, 1 - B_re)), torch.log(A_re)))
