@@ -1,6 +1,14 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-"""Tests for `dynwgraphs` package."""
+"""
+@author: Domenico Di Gangi,  <digangidomenico@gmail.com>
+Created on Saturday June 5th 2021
+
+tests yet to be written
+"""
+
+
 
 import pytest
 
