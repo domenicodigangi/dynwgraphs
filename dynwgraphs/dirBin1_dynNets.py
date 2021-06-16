@@ -8,7 +8,6 @@ dirBin1_Nets :  directed binary model with one parameter per node, aka theta mod
 
 import torch
 import sys
-sys.path.append("./src/")
 from .utils import splitVec, tens, putZeroDiag, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
     degIO_from_mat, strIO_from_mat, tic, toc, rand_steps, dgpAR, putZeroDiag_T
 from torch.autograd import grad

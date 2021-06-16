@@ -9,7 +9,6 @@ import torch
 import sys
 import numpy as np
 import os
-sys.path.append("./src/")
 from .utils import splitVec, tens, putZeroDiag, putZeroDiag_T, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
     degIO_from_mat, strIO_from_mat, tic, toc
 from torch.autograd import grad
