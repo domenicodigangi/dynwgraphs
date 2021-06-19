@@ -17,7 +17,6 @@ from ..hypergrad import SGDHD, AdamHD
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import chi2
-import pandas as pd
 
 from ..lbfgsnew import LBFGSNew
 

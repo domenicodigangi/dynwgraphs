@@ -13,13 +13,6 @@ functions needed in different parts of the module
 """
 
 import torch
-from ..hypergrad import SGDHD, AdamHD
-import matplotlib.pyplot as plt
-import numpy as np
-from scipy.stats import chi2
-import pandas as pd
-
-from ..lbfgsnew import LBFGSNew
 
 def splitVec(vec, N=None):
     if N is None:
