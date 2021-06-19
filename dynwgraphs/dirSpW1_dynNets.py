@@ -9,8 +9,8 @@ import torch
 import sys
 import numpy as np
 import os
-from .utils import splitVec, tens, putZeroDiag, putZeroDiag_T, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
-    degIO_from_mat, strIO_from_mat, tic, toc
+from .utils.tensortools import splitVec, tens, putZeroDiag, putZeroDiag_T, soft_lu_bound, strIO_from_mat
+from .utils.opt import optim_torch
 from torch.autograd import grad
 #----------------------------------- Zero Augmented Static model functions
 #self = dirSpW1_dynNet_SD(ovflw_lm=True, rescale_SD = False )
@@ -22,10 +22,11 @@ class dirSpW1_staNet(object):
     This a class  for directed weighted sparse static networks (or sequences), modelled with a zero augmented distribution, one  parameter per each node (hence the 1 in the name)
     """
 
-    def __init__(self, ovflw_lm=True, distr='gamma'):
+    def __init__(self, ovflw_lm=True, distr='gamma', dim_dist_par_un = 1, dim_beta = 1):
         self.ovflw_lm = ovflw_lm
         self.distr = distr
-
+        self.dim_dist_par_un = dim_dist_par_un
+        self.dim_beta = dim_beta
         self.ovflw_exp_L_limit = -50
         self.ovflw_exp_U_limit = 40
 
@@ -118,33 +119,33 @@ class dirSpW1_staNet(object):
             phi_T[:, t] = self.start_phi_from_obs(Y_t)
         return phi_T
 
-    def dist_from_pars(self, distribution, phi, beta, X_t, dist_par_un, A_t=None):
+    def dist_from_pars(self, phi, beta, X_t, dist_par_un, A_t=None):
         """
         return a pytorch distribution. it can be matrix valued (if no A_t is given) or vector valued
         """
         N = phi.shape[0]//2
         # Restrict the distribution parameters.
         dist_par_re = self.link_dist_par(dist_par_un, N, A_t=A_t)
-        if distribution == 'gamma':
+        if self.distr == 'gamma':
             EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t)
             if A_t is None:
                 rate = torch.div(dist_par_re, EYcond_mat)
-                dist = torch.distributions.gamma.Gamma(dist_par_re, rate)
+                distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
             else:# if A_t is given, we already took into account the dimension of dist_par above when restricting it
                 rate = torch.div(dist_par_re, EYcond_mat[A_t])
-                dist = torch.distributions.gamma.Gamma(dist_par_re, rate)
+                distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
 
-        elif distribution == 'lognormal':
+        elif self.distr == 'lognormal':
             log_EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t, ret_log=True)
             if A_t is None:
                 sigma = dist_par_re
                 mu = log_EYcond_mat - (sigma ** 2) / 2
-                dist = torch.distributions.log_normal.LogNormal(mu, sigma)
+                distr_obj = torch.distributions.log_normal.LogNormal(mu, sigma)
             else:  # if A_t is given, we already took into account the dimension of dist_par above when restricting it
                 sigma = dist_par_re
                 mu = log_EYcond_mat[A_t] - (sigma ** 2) / 2
-                dist = torch.distributions.log_normal.LogNormal(mu, sigma)
-        return dist
+                distr_obj = torch.distributions.log_normal.LogNormal(mu, sigma)
+        return distr_obj
 
     def loglike_t(self, Y_t, phi, beta=None, X_t=None, dist_par_un=None, like_type=2):
         """ The log likelihood of the zero augmented gamma network model as a funciton of the
@@ -181,8 +182,8 @@ class dirSpW1_staNet(object):
                 out = tmp + tmp1 + tmp2 + tmp3
 
         else:# compute the likelihood using torch buit in functions
-            dist = self.dist_from_pars(self.distr, phi, beta, X_t, dist_par_un, A_t=A_t)
-            log_probs = dist.log_prob(Y_t[A_t])
+            distr_obj = self.dist_from_pars(phi, beta, X_t, dist_par_un, A_t=A_t)
+            log_probs = distr_obj.log_prob(Y_t[A_t])
             out = torch.sum(log_probs)        # softly bound loglikelihood from below??
 
         #out = soft_l_bound(out, -1e20)
@@ -202,17 +203,17 @@ class dirSpW1_staNet(object):
                     dist_par_re = dist_par_re[A_t]
         return dist_par_re
 
-    def dist_par_un_start_val(self, dim_dist_par_un=1):
+    def dist_par_un_start_val(self):
         if self.distr=='gamma':
             # starting point for log(alpha) in gamma distribution
-            dist_par_un0 = torch.zeros(dim_dist_par_un)
+            dist_par_un0 = torch.zeros(self.dim_dist_par_un)
         elif self.distr=='lognormal':
             # starting point for log(alpha) in gamma distribution
-            dist_par_un0 = torch.zeros(dim_dist_par_un)
+            dist_par_un0 = torch.zeros(self.dim_dist_par_un)
         return dist_par_un0
 
     def estimate_ss_t(self, Y_t, X_t=None, beta_t=None, phi_0=None, dist_par_un_t=None, like_type=2,
-                        est_dist_par=False, dim_dist_par_un=1, est_beta=False, dim_beta = 1, min_n_iter=200,
+                        est_dist_par=False, est_beta=False, min_n_iter=200,
                         opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10):
         """
         single snapshot Maximum logLikelihood estimate of phi_t and, if not given as input, also of dist_par_un_t and beta_t
@@ -227,10 +228,10 @@ class dirSpW1_staNet(object):
         unPar_0 = phi_0#.clone().detach()
         # if no value for dist_par is provided, set a starting value and estimate it
         if est_dist_par:
-            N_dis_par = dim_dist_par_un
+            N_dis_par = self.dim_dist_par_un
             # if given use input as starting point
             if dist_par_un_t is None:
-                dist_par_un_0 = self.dist_par_un_start_val(dim_dist_par_un)
+                dist_par_un_0 = self.dist_par_un_start_val()
             else:
                 dist_par_un_0 = dist_par_un_t#.clone().detach()
             unPar_0 = torch.cat((unPar_0, dist_par_un_0))
@@ -238,7 +239,7 @@ class dirSpW1_staNet(object):
             #if given use beta_t as starting point else start at zero
             if beta_t is None:
                 n_reg = X_t.shape[2]
-                beta_0 = torch.randn(dim_beta, n_reg)*0.01
+                beta_0 = torch.randn(self.dim_beta, n_reg)*0.01
             else:
                 beta_0 = beta_t#.clone().detach()
             unPar_0 = torch.cat((unPar_0, beta_0.view(-1)))
@@ -264,7 +265,7 @@ class dirSpW1_staNet(object):
         elif (est_beta) and (not est_dist_par): # estimate phi_t dist_par and and beta
             def obj_fun(unPar):
                 return - self.loglike_t(Y_t, unPar[:2*N], X_t=X_t,
-                                          beta=unPar[2*N:].view(dim_beta, n_reg),
+                                          beta=unPar[2*N:].view(self.dim_beta, n_reg),
                                           dist_par_un=None,
                                           like_type=like_type)
 
@@ -275,7 +276,7 @@ class dirSpW1_staNet(object):
         elif (est_beta) and (est_dist_par): # estimate phi_t dist_par and and beta
             def obj_fun(unPar):
                 return - self.loglike_t(Y_t, unPar[:2*N], X_t=X_t,
-                                          beta=unPar[2*N + N_dis_par:].view(dim_beta, n_reg),
+                                          beta=unPar[2*N + N_dis_par:].view(self.dim_beta, n_reg),
                                           dist_par_un=unPar[2*N:2*N + N_dis_par],
                                           like_type=like_type)
 
@@ -289,7 +290,7 @@ class dirSpW1_staNet(object):
         return all_par_est, diag
 
     def ss_filt(self, Y_T, X_T=None, beta=None, phi_T_0=None, dist_par_un=None, like_type=2,
-                est_dist_par=False, dim_dist_par_un=1, est_beta=False, dim_beta = 1,
+                est_dist_par=False, est_beta=False,
                 opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10,
                 rel_improv_tol=5*1e-7, no_improv_max_count=30,
                 min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
@@ -304,10 +305,10 @@ class dirSpW1_staNet(object):
         all_par_est_T = torch.zeros(2 * N, T)
 
         if est_dist_par:
-            all_par_est_T = torch.cat((all_par_est_T, torch.zeros(dim_dist_par_un, T) ), dim=1)
+            all_par_est_T = torch.cat((all_par_est_T, torch.zeros(self.dim_dist_par_un, T) ), dim=1)
         if est_beta:
             n_reg = X_T.shape[2]
-            all_par_est_T = torch.cat((all_par_est_T, torch.zeros(dim_beta*n_reg, T)), dim=1)
+            all_par_est_T = torch.cat((all_par_est_T, torch.zeros(self.dim_beta*n_reg, T)), dim=1)
 
         diag_T = []
         X_t = None
@@ -326,9 +327,9 @@ class dirSpW1_staNet(object):
             all_par_t, diag_t = self.estimate_ss_t(Y_t,
                                                      phi_0=phi_t_0,
                                                      est_dist_par=est_dist_par,
-                                                     dist_par_un_t=dist_par_un, dim_dist_par_un=dim_dist_par_un,
+                                                     dist_par_un_t=dist_par_un,
                                                      est_beta=est_beta,
-                                                     dim_beta=dim_beta, beta_t=beta, X_t=X_t,
+                                                    beta_t=beta, X_t=X_t,
                                                      opt_steps=opt_steps,
                                                      like_type=like_type,
                                                      lRate=lRate, opt_n=opt_n,
@@ -341,7 +342,7 @@ class dirSpW1_staNet(object):
             # print(t)
         return all_par_est_T, diag_T
 
-    def estimate_dist_par_const_given_phi_T(self, Y_T, phi_T, dim_dist_par_un, X_T=None, beta=None,
+    def estimate_dist_par_const_given_phi_T(self, Y_T, phi_T, X_T=None, beta=None,
                                             dist_par_un_0=None, like_type=2,
                                             opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False,
                                             print_every=10,
@@ -353,7 +354,7 @@ class dirSpW1_staNet(object):
         N = Y_T.shape[0]
         T = Y_T.shape[2]
         if dist_par_un_0 is None:
-            dist_par_un_0 = torch.zeros(dim_dist_par_un)
+            dist_par_un_0 = torch.zeros(self.dim_dist_par_un)
 
         unPar_0 = dist_par_un_0#.clone().detach()
 
@@ -376,7 +377,7 @@ class dirSpW1_staNet(object):
 
         return dist_par_un_est, diag
 
-    def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dim_beta, dist_par_un,  beta_0=None, like_type=2,
+    def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dist_par_un,  beta_0=None, like_type=2,
                                         opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False,
                                         print_every=10,
                                         rel_improv_tol=5*1e-7, no_improv_max_count=30,
@@ -388,7 +389,7 @@ class dirSpW1_staNet(object):
         n_reg = X_T.shape[2]
         if beta_0 is None:
             n_reg = X_T.shape[2]
-            beta_0 = torch.randn(dim_beta, n_reg)*0.01
+            beta_0 = torch.randn(self.dim_beta, n_reg)*0.01
 
         unPar_0 = beta_0.view(-1).clone().detach()
 
@@ -397,7 +398,7 @@ class dirSpW1_staNet(object):
             logl_T=0
             for t in range(T):
                 logl_T = logl_T + self.loglike_t(Y_T[:, :, t], phi_T[:, t], X_t=X_T[:, :, :, t],
-                                                   beta=unPar.view(dim_beta, n_reg),
+                                                   beta=unPar.view(self.dim_beta, n_reg),
                                                    dist_par_un=dist_par_un, like_type=like_type)
             return - logl_T
 
@@ -406,12 +407,12 @@ class dirSpW1_staNet(object):
                                         rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
                                         min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
 
-        beta_t_est = beta_t_est_flat.view(dim_beta, n_reg)
+        beta_t_est = beta_t_est_flat.view(self.dim_beta, n_reg)
         return beta_t_est, diag
 
     def ss_filt_est_beta_dist_par_const(self, Y_T, X_T=None, beta=None, phi_T=None, dist_par_un=None, like_type=2,
-                                          est_const_dist_par=False, dim_dist_par_un=1,
-                                          est_const_beta=False, dim_beta = 1,
+                                          est_const_dist_par=False, 
+                                          est_const_beta=False,
                                           opt_large_steps=10, opt_n=1,   opt_steps_phi=500, lRate_phi=0.01,
                                           opt_steps_dist_par=500, lRate_dist_par=0.01,
                                           opt_steps_beta=400, lRate_beta=0.01,
@@ -431,11 +432,11 @@ class dirSpW1_staNet(object):
 
         # if starting values or input values are not given, define them
         if dist_par_un is None:
-            dist_par_un = self.dist_par_un_start_val(dim_dist_par_un)
+            dist_par_un = self.dist_par_un_start_val()
         if beta is None:
             if X_T is not None:
                 n_reg = X_T.shape[2]
-                beta = torch.zeros(dim_beta, n_reg)
+                beta = torch.zeros(self.dim_beta, n_reg)
             else:
                 beta = torch.zeros(1)
         if phi_T is None:
@@ -447,8 +448,8 @@ class dirSpW1_staNet(object):
 
             phi_T, diag_phi_t = self.ss_filt(Y_T, X_T=X_T, beta=beta, phi_T_0=phi_T,
                                             dist_par_un=dist_par_un,
-                                            like_type=like_type, est_dist_par=False, dim_dist_par_un=dim_dist_par_un,
-                                            est_beta=False, dim_beta=dim_beta,
+                                            like_type=like_type, est_dist_par=False, 
+                                            est_beta=False, 
                                             opt_steps=opt_steps_phi, opt_n=opt_n,
                                             lRate=lRate_phi, print_flag=print_flag_phi, print_every=print_every,
                                             rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
@@ -459,7 +460,7 @@ class dirSpW1_staNet(object):
             # print(phi_T)
             # estimate beta_t given phi_T and dist_par
             if est_const_beta:
-                beta, diag_beta = self.estimate_beta_const_given_phi_T(Y_T, X_T, phi_T.clone().detach(), dim_beta,
+                beta, diag_beta = self.estimate_beta_const_given_phi_T(Y_T, X_T, phi_T.clone().detach(), 
                                                                         dist_par_un=dist_par_un.clone().detach(),
                                                                         beta_0=beta.clone().detach(),
                                                                         lRate=lRate_beta,     opt_steps=opt_steps_beta,
@@ -477,7 +478,7 @@ class dirSpW1_staNet(object):
             # estimate dist_par given phi_T and beta_t
             if est_const_dist_par:
                 dist_par_un, diag_dist_par_un = self.estimate_dist_par_const_given_phi_T(Y_T, phi_T.clone().detach(),
-                                                                            dim_dist_par_un,
+                                                                            self.dim_dist_par_un,
                                                                             X_T=X_T, beta=beta.clone().detach(),
                                                                             dist_par_un_0=dist_par_un,
                                                                             lRate=lRate_dist_par,
@@ -545,7 +546,7 @@ class dirSpW1_staNet(object):
 
 
     def sample_from_dgps(self, N, T, N_sample, p_T=torch.ones(1, 1, 1)*0.1, dgp_type='sin',
-                           n_reg=2, n_reg_beta_tv=1, dim_beta=1, dim_dist_par_un=1, dist_par_un=None,
+                           n_reg=2, n_reg_beta_tv=1, dist_par_un=None,
                            distribution='gamma', Y_0=None, X_T=None):
         torch.manual_seed(2)
         phi_T = torch.zeros(N, T)
@@ -564,14 +565,12 @@ class dirSpW1_staNet(object):
         # estimate static model on the starting network and have phi tv around those values
         all_par_0, diag = self.estimate_ss_t(Y_t=Y_0, est_beta=False,
                                                est_dist_par=True,
-                                               dim_dist_par_un=dim_dist_par_un,
-                                               dim_beta=dim_beta,
                                                print_flag=False)
 
         um_phi = all_par_0[:2*N]
 
         if dist_par_un is None:
-            dist_par_un = all_par_0[2*N:2*N + dim_dist_par_un]
+            dist_par_un = all_par_0[2*N:2*N + self.dim_dist_par_un]
 
         if dgp_type == 'sin':
             period = T
@@ -579,10 +578,10 @@ class dirSpW1_staNet(object):
             phi_T = um_phi.unsqueeze(1).detach() + torch.sin(6.28*tens(range(T))/period + torch.randn((2*N, 1))) * ampl
 
             if n_reg>0:
-                beta_T = torch.ones(dim_beta*n_reg, T)
+                beta_T = torch.ones(self.dim_beta*n_reg, T)
             if n_reg_beta_tv>0:
                 ampl_beta = 0.3
-                n_tv_beta_par = n_reg_beta_tv * dim_beta
+                n_tv_beta_par = n_reg_beta_tv * self.dim_beta
                 beta_T[:n_tv_beta_par, :] = beta_T[:n_tv_beta_par, :] + \
                                             torch.sin(6.28*tens(range(T))/period + torch.randn((n_tv_beta_par, 1))) * \
                                             ampl_beta
@@ -592,10 +591,10 @@ class dirSpW1_staNet(object):
             phi_T = um_phi.unsqueeze(1).detach() + torch.zeros((1, T))
             phi_T[:, T//2:] = phi_T[:, T//2:] + ampl
             if n_reg > 0:
-                beta_T = torch.ones(dim_beta * n_reg, T)
+                beta_T = torch.ones(self.dim_beta * n_reg, T)
             if n_reg_beta_tv > 0:
                 ampl_beta = 0.3
-                n_tv_beta_par = n_reg_beta_tv * dim_beta
+                n_tv_beta_par = n_reg_beta_tv * self.dim_beta
                 beta_T[:n_tv_beta_par, :] = beta_T[:n_tv_beta_par, T//2:] + ampl_beta
 
         if dgp_type == 'ar1':
@@ -610,9 +609,9 @@ class dirSpW1_staNet(object):
                 phi_T[:, t] = w + B * phi_T[:, t-1] + phi_T[:, t]
 
             if n_reg > 0:
-                beta_T = torch.ones(dim_beta * n_reg, T)
+                beta_T = torch.ones(self.dim_beta * n_reg, T)
             if n_reg_beta_tv > 0:
-                n_tv_beta_par = n_reg_beta_tv * dim_beta
+                n_tv_beta_par = n_reg_beta_tv * self.dim_beta
                 w = (1 - B) * beta_T[:n_tv_beta_par, 0]
                 beta_T[:n_tv_beta_par, 1:] = torch.randn((n_tv_beta_par, T-1)) * ampl
                 for t in range(1, T):
@@ -629,13 +628,13 @@ class dirSpW1_staNet(object):
         for t in range(T):
             phi = self.identify(phi_T[:, t])
             phi_T[:, t] = phi
-            beta = beta_T[:, t].view(dim_beta, n_reg)
+            beta = beta_T[:, t].view(self.dim_beta, n_reg)
             X_t = X_T[:, :, :, t]
             dist_par_re = self.link_dist_par(dist_par_un, N)
 
-            dist = self.dist_from_pars(distribution, phi, beta, X_t, dist_par_re)
+            distr_obj = self.dist_from_pars(phi, beta, X_t, dist_par_re)
 
-            Y_t_S = dist.sample((N_sample,)).permute(1, 2, 0)
+            Y_t_S = distr_obj.sample((N_sample,)).permute(1, 2, 0)
             A_t_S = torch.distributions.bernoulli.Bernoulli(p_T[:, :, t]).sample((N_sample, )).view(N, N, N_sample) == 1
             Y_t_S[~A_t_S] = 0
             Y_t_S = putZeroDiag_T(Y_t_S)
@@ -652,11 +651,10 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
         will be flexible but for the moment we have a single parameter equal for all links
         """
 
-    def __init__(self, ovflw_lm=False, distr='gamma', rescale_SD=False, backprop_sd=False):
-        dirSpW1_staNet.__init__(self, ovflw_lm=ovflw_lm, distr=distr)
+    def __init__(self, ovflw_lm=False, distr='gamma', rescale_SD=False, backprop_sd=False, dim_dist_par_un = 1, dim_beta = 1):
+        super().__init__(ovflw_lm=ovflw_lm, distr=distr, dim_dist_par_un = dim_dist_par_un, dim_beta = dim_beta)
         self.rescale_SD = rescale_SD
         self.n_reg_beta_tv = 0
-        self.dim_beta = 1
         self.backprop_sd = backprop_sd
 
     def un2re_BA_par( BA_un):
@@ -765,7 +763,7 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
                 else:
                     est_dist_par = True
                 par_0, diag = self.estimate_ss_t(Y_0, X_t=X_0, beta_t=None, phi_0=None, dist_par_un_t=None,
-                                  est_dist_par=est_dist_par, dim_dist_par_un=1, est_beta=est_beta, dim_beta=1, min_n_iter=250,
+                                  est_dist_par=est_dist_par, est_beta=est_beta, min_n_iter=250,
                                   opt_steps=1500, opt_n=1, lRate=0.01, print_flag=False)
 
                 phi_0 = par_0[:2*N]
@@ -845,8 +843,8 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
                 beta_t = torch.cat((sd_par_t[-N_beta_tv:].view(self.dim_beta, self.n_reg_beta_tv), beta_const), dim=1)
             else:
                 beta_t = beta_const
-            dist = self.dist_from_pars(self.distr, phi_t, beta_t, X_t, dist_par_re)
-            Y_t = dist.sample()
+            distr_obj = self.dist_from_pars(phi_t, beta_t, X_t, dist_par_re)
+            Y_t = distr_obj.sample()
             if p_T is not None:
                 p_t = p_T[:, :, t]
                 A_t = torch.distributions.bernoulli.Bernoulli(p_t).sample() == 1
@@ -943,14 +941,14 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
         return p_t.unsqueeze(2).repeat(1, 1, T)
 
     def estimate_SD(self, Y_T, opt_n=1, opt_steps=800, lRate=0.005, plot_flag=False, print_flag=False,
-                    B0=None, A0=None, W0=None, dist_par_un=None, dim_dist_par_un=1, est_dis_par_un=False,
+                    B0=None, A0=None, W0=None, dist_par_un=None, est_dis_par_un=False,
                     sd_par_0=None, init_filt_um=False,
                     print_every=200, rel_improv_tol=1e-8, no_improv_max_count=30,
                                       min_n_iter=750, bandwidth=250, small_grad_th=1e-6):
 
         N = Y_T.shape[0]
         if dist_par_un is None:
-            dist_par_un = self.dist_par_un_start_val(dim_dist_par_un)
+            dist_par_un = self.dist_par_un_start_val()
         if B0 is None:
             B, A = torch.tensor([0.7, 0.7]), torch.ones(2) * 0.0001
             wI, wO = 1 + torch.randn(N), torch.randn(N)
@@ -998,7 +996,7 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
             dist_par_un_est = dist_par_un
         return w_est.clone(), re_BA_est[:n_B].clone(), re_BA_est[n_B:].clone(), dist_par_un_est, sd_par_0.clone(), diag
 
-    def estimate_SD_X0(self, Y_T, X_T, dim_beta=None, n_beta_tv=None, dim_dist_par_un=1,
+    def estimate_SD_X0(self, Y_T, X_T, n_beta_tv=None,
                        sd_par_0=None, init_filt_um=False,
                         opt_n=1, opt_steps=800, lRate=0.005,
                         plot_flag=False, print_flag=False, print_every=10,
@@ -1009,13 +1007,12 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
         n_reg = X_T.shape[2]
         if n_beta_tv is not None:
             self.n_reg_beta_tv = n_beta_tv
-        if dim_beta is not None:
-            self.dim_beta = dim_beta
+        
         N_beta_tv = self.n_reg_beta_tv * self.dim_beta
         n_reg_beta_c = n_reg - self.n_reg_beta_tv
 
         if dist_par_un is None:
-            dist_par_un = self.dist_par_un_start_val(dim_dist_par_un)
+            dist_par_un = self.dist_par_un_start_val()
 
         if beta_const_0 is None:
             if not est_beta:
@@ -1031,7 +1028,7 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
             w = torch.cat((w, torch.zeros(N_beta_tv)))
             B = torch.cat((B, B0 * torch.ones(N_beta_tv)))
             A = torch.cat((A, A0 * torch.ones(N_beta_tv)))
-            beta_const = torch.randn(dim_beta, n_reg-self.n_reg_beta_tv)*0.01
+            beta_const = torch.randn(self.dim_beta, n_reg-self.n_reg_beta_tv)*0.01
         else:
             B = B0
             A = A0
@@ -1053,7 +1050,7 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
         N_BA = A.shape[0]
 
         if est_dis_par_un:  #if required estimate also the dist par
-            n_dist_par_est = dim_dist_par_un
+            n_dist_par_est = self.dim_dist_par_un
             if est_beta:
                 unPar_0 = torch.cat((torch.cat((torch.cat((w, self.re2un_BA_par(torch.cat((B, A))))), dist_par_un)),
                                      beta_const.view(-1)))#.clone().detach()
@@ -1062,7 +1059,7 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
                     reBA = self.un2re_BA_par(unPar[n:n + 2*N_BA])
                     return - self.loglike_sd_filt(unPar[:n], reBA[:N_BA], reBA[N_BA:], Y_T,
                                                 dist_par_un=unPar[n + 2*N_BA:n + 2*N_BA + n_dist_par_est],
-                                                beta_const=unPar[n + 2*N_BA + n_dist_par_est:].view(dim_beta, n_reg_beta_c),
+                                                beta_const=unPar[n + 2*N_BA + n_dist_par_est:].view(self.dim_beta, n_reg_beta_c),
                                                 X_T=X_T)
             else:
                 unPar_0 = torch.cat((torch.cat((w, self.re2un_BA_par(torch.cat((B, A))))), dist_par_un))#.clone().detach()
@@ -1071,7 +1068,7 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
                     reBA = self.un2re_BA_par(unPar[n:n + 2*N_BA])
                     return - self.loglike_sd_filt(unPar[:n], reBA[:N_BA], reBA[N_BA:], Y_T,
                                                 dist_par_un=unPar[n + 2*N_BA:n + 2*N_BA + n_dist_par_est],
-                                                beta_const=beta_const.view(dim_beta, n_reg_beta_c),
+                                                beta_const=beta_const.view(self.dim_beta, n_reg_beta_c),
                                                 X_T=X_T)
 
         else:
@@ -1083,7 +1080,7 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
                 reBA = self.un2re_BA_par(unPar[n:n + 2 * N_BA])
                 return - self.loglike_sd_filt(unPar[:n], reBA[:N_BA], reBA[N_BA:], Y_T,
                                             dist_par_un=dist_par_un,
-                                            beta_const=unPar[n + 2 * N_BA:].view(dim_beta, n_reg_beta_c),
+                                            beta_const=unPar[n + 2 * N_BA:].view(self.dim_beta, n_reg_beta_c),
                                             X_T=X_T)
 
         unPar_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
@@ -1099,7 +1096,7 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
             dist_par_un_est = dist_par_un
             n_dist_par_est=0
         if est_beta:
-            beta_const_est = unPar_est[n + 2*N_BA + n_dist_par_est:].view(dim_beta, n_reg_beta_c)
+            beta_const_est = unPar_est[n + 2*N_BA + n_dist_par_est:].view(self.dim_beta, n_reg_beta_c)
         else:
             beta_const_est = beta_const_0
         return w_est.clone().detach(), re_BA_est[:N_BA].clone().detach(), \
@@ -1108,8 +1105,8 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
 
 
 
-def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_type, regr_flag, SAVE_FOLD,
-                                     X_T=None, dim_beta=None, n_beta_tv=0, unit_measure=1e6,
+def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, SAVE_FOLD,
+                                     X_T=None, dim_beta=1, dim_dist_par_un=1, n_beta_tv=0, unit_measure=1e6,
                                     learn_rate=0.01, T_test=10,
                                     N_steps=15000, print_every=1000, ovflw_lm=True, rescale_score=False,
                                      load_ss_beta_coeff=True, load_ss_as_0=False):
@@ -1118,7 +1115,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_
         N = Y_T.shape[0]
         T = Y_T.shape[2]
 
-        model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, distribution=distribution, rescale_SD=rescale_score)
+        model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, distribution=distribution, rescale_SD=rescale_score, dim_beta=dim_beta,  dim_dist_par_un=dim_dist_par_un)
         rel_improv_tol_SS = 1e-6
         min_n_iter_SS = 20
         bandwidth_SS = min_n_iter_SS
@@ -1135,9 +1132,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_
                                                           phi_T=None,
                                                           dist_par_un=None,
                                                           est_const_dist_par=True,
-                                                          dim_dist_par_un=dim_dist_par_un,
                                                           est_const_beta=False,
-                                                          dim_beta=1,
                                                           opt_large_steps=N_steps // N_steps_iter,
                                                           opt_steps_phi=N_steps_iter,
                                                           lRate_phi=learn_rate,
@@ -1166,7 +1161,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_
                                 '_N_steps_' + str(N_steps) + \
                                 '_ovflw_lm_' + str(ovflw_lm) + \
                                 '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
-                                distribution + '_distr_' + 'dim_distr_par_' + str(dim_dist_par_un) + '.npz'
+                                distribution + '_distr_' + 'dim_distr_par_' + str(model.dim_dist_par_un) + '.npz'
                     print(file_path)
 
                     np.savez(file_path, phi_ss_est_T.detach(), dist_par_un.detach(), diag, N_steps, N_steps_iter,
@@ -1185,19 +1180,19 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_
                                 '_N_steps_' + str(N_steps_load) + \
                                 '_ovflw_lm_' + str(ovflw_lm) + \
                                 '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
-                                distribution + '_distr_' + 'dim_distr_par_' + str(dim_dist_par_un) + '.npz'
+                                distribution + '_distr_' + 'dim_distr_par_' + str(model.dim_dist_par_un) + '.npz'
 
                     ld_est = np.load(file_path, allow_pickle=True)
                     phi_T_0, dist_par_un_0 = tens(ld_est["arr_0"]), tens(ld_est["arr_1"])
                 else:
                     phi_T_0 = model.start_phi_from_obs_T(Y_T)
-                    dist_par_un_0 = model.dist_par_un_start_val(dim_dist_par_un)
+                    dist_par_un_0 = model.dist_par_un_start_val()
 
                 phi_ss_est_T, dist_par_un, beta_est, diag = \
                     model.ss_filt_est_beta_dist_par_const(Y_T, X_T=X_T, beta=None, phi_T=phi_T_0,
                                                           dist_par_un=dist_par_un_0,
-                                                          est_const_dist_par=True, dim_dist_par_un=dim_dist_par_un,
-                                                          est_const_beta=True, dim_beta=dim_beta,
+                                                          est_const_dist_par=True, dim_dist_par_un=model.dim_dist_par_un,
+                                                          est_const_beta=True, 
                                                           opt_large_steps=N_steps//N_steps_iter,
                                                           opt_steps_phi=N_steps_iter, lRate_phi=learn_rate,
                                                           opt_steps_dist_par=N_steps_iter, lRate_dist_par=learn_rate,
@@ -1215,7 +1210,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_
                             '_N_steps_' + str(N_steps) + \
                             '_ovflw_lm_' + str(ovflw_lm) + \
                             '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
-                            '_dim_beta_' + str(dim_beta) + \
+                            '_dim_beta_' + str(model.dim_beta) + \
                             distribution + '_distr_' + 'dim_distr_par_' + str(dim_dist_par_un) + '.npz'
                 print(file_path)
                 np.savez(file_path, phi_ss_est_T.detach(), dist_par_un.detach(), beta_est.detach(),
@@ -1245,7 +1240,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_
                 ld_est = np.load(file_path, allow_pickle=True)
                 phi_ss_est_T, dist_par_un_ss = tens(ld_est["arr_0"]), tens(ld_est["arr_1"])
 
-                model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, rescale_SD=rescale_score, distribution=distribution)
+                model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, rescale_SD=rescale_score, distribution=distribution, dim_beta=dim_beta, dim_dist_par_un=dim_dist_par_un)
                 # for t in range(T):
                 #     phi_ss_est_T[:, t] = model.identify(phi_ss_est_T[:, t])
                 phi_T_0 = model.start_phi_from_obs_T(Y_T[:, :, -10:])
@@ -1305,14 +1300,14 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_
                                 '_N_steps_' + str(N_steps_load) + \
                                 '_ovflw_lm_' + str(ovflw_lm) + \
                                 '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
-                                '_dim_beta_' + str(dim_beta) + \
+                                '_dim_beta_' + str(model.dim_beta) + \
                                 distribution + '_distr_' + 'dim_distr_par_' + str(dim_dist_par_un) + '.npz'
 
                     ld_est = np.load(file_path, allow_pickle=True)
                     phi_ss_est_T, dist_par_un_0, beta_0 = tens(ld_est["arr_0"]), tens(ld_est["arr_1"]), tens(
                         ld_est["arr_2"])
 
-                    model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, rescale_SD=rescale_score, distribution=distribution)
+                    model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, rescale_SD=rescale_score, distribution=distribution, dim_beta=dim_beta, dim_dist_par_un=dim_dist_par_un)
                     # for t in range(T):
                     #     phi_ss_est_T[:, t] = model.identify(phi_ss_est_T[:, t])
                     phi_T_0 = model.start_phi_from_obs_T(Y_T[:, :, -10:])
@@ -1329,7 +1324,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_
                                 '_resc_score_' + str(rescale_score) + '_ovflw_lm_' + str(ovflw_lm) + \
                                 '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                                 distribution + '_distr_' + '_dim_distr_par_' + str(dim_dist_par_un) + \
-                                '_dim_beta_' + str(dim_beta) + \
+                                '_dim_beta_' + str(model.dim_beta) + \
                                 'test_sam_last_' + str(T_test) + '.npz'
                     ld_est = np.load(file_path, allow_pickle=True)
                     # define initial points of optimizer: sets also the number of A,B parameters
@@ -1349,7 +1344,6 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_
                                                                                 sd_par_0=sd_par_0,
                                                                                 beta_const_0=beta_0,
                                                                                 est_beta = est_beta,
-                                                                                dim_beta=dim_beta,
                                                                                 n_beta_tv=n_beta_tv,
                                                                                 dim_dist_par_un=dim_dist_par_un,
                                                                                 print_flag=True,
@@ -1367,7 +1361,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, dim_dist_par_un, filter_
                             '_resc_score_' + str(rescale_score) + '_ovflw_lm_' + str(ovflw_lm) + \
                             '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                             distribution + '_distr_' + '_dim_distr_par_' + str(dim_dist_par_un) + \
-                            '_dim_beta_' + str(dim_beta) + \
+                            '_dim_beta_' + str(model.dim_beta) + \
                             'test_sam_last_' + str(T_test) + '.npz'
                 print(file_path)
                 np.savez(file_path, W_est.detach(), B_est.detach(), A_est.detach(), dist_par_un_est.detach(),
@@ -1449,7 +1443,7 @@ def load_dirSpW1_models(N, T, distribution, dim_dist_par_un, filter_type, regr_f
                         '_resc_score_' + str(rescale_score) + '_ovflw_lm_' + str(ovflw_lm) + \
                         '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                         distribution + '_distr_' + '_dim_distr_par_' + str(dim_dist_par_un) + \
-                        '_dim_beta_' + str(dim_beta) + \
+                        '_dim_beta_' + str(model.dim_beta) + \
                         'test_sam_last_' + str(T_test) + '.npz'
             print(file_path)
 

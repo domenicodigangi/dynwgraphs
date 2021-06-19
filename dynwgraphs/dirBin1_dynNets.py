@@ -7,9 +7,10 @@ dirBin1_Nets :  directed binary model with one parameter per node, aka theta mod
 """
 
 import torch
-import sys
-from .utils import splitVec, tens, putZeroDiag, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
-    degIO_from_mat, strIO_from_mat, tic, toc, rand_steps, dgpAR, putZeroDiag_T
+from .utils.tensortools import splitVec, tens, putZeroDiag, soft_lu_bound,\
+    degIO_from_mat, strIO_from_mat, putZeroDiag_T
+from .utils.dgps import rand_steps, dgpAR
+from .utils.tictoc import tic, toc
 from torch.autograd import grad
 import numpy as np
 from .dirSpW1_dynNets import dirSpW1_dynNet_SD, dirSpW1_staNet
@@ -17,10 +18,10 @@ from .dirSpW1_dynNets import dirSpW1_dynNet_SD, dirSpW1_staNet
 
 
 class dirBin1_staNet(dirSpW1_staNet):
-    def __init__(self, ovflw_lm=False, distribution='bernoulli'):
+    def __init__(self, ovflw_lm=False, distribution='bernoulli', dim_beta=1):
         dirSpW1_staNet.__init__(self, ovflw_lm=ovflw_lm, distribution=distribution)
         self.n_reg_beta_tv = 0
-        self.dim_beta = 1
+        self.dim_beta = dim_beta
         self.ovflw_exp_L_limit = -50
         self.ovflw_exp_U_limit = 40
 
@@ -200,13 +201,13 @@ class dirBin1_staNet(dirSpW1_staNet):
         return all_par_est, diag
 
 
-    def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dim_beta, dist_par_un,  beta_0=None, like_type=0, opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10, rel_improv_tol=5 * 1e-7, no_improv_max_count=30, min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
+    def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dist_par_un,  beta_0=None, like_type=0, opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10, rel_improv_tol=5 * 1e-7, no_improv_max_count=30, min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
             """single snapshot Maximum logLikelihood estimate given beta_t"""
             T = Y_T.shape[2]
             n_reg = X_T.shape[2]
             if beta_0 is None:
                 n_reg = X_T.shape[2]
-                beta_0 = torch.zeros(dim_beta, n_reg)
+                beta_0 = torch.zeros(self.dim_beta, n_reg)
 
             unPar_0 = beta_0.clone().detach()
             torch.autograd.set_detect_anomaly(True)
@@ -215,7 +216,7 @@ class dirBin1_staNet(dirSpW1_staNet):
                 logl_T = 0
                 for t in range(T):
                     logl_T = logl_T + self.loglike_t(Y_T[:, :, t], phi_T[:, t], X_t=X_T[:, :, :, t],
-                                                       beta=unPar.view(dim_beta, n_reg),
+                                                       beta=unPar.view(self.dim_beta, n_reg),
                                                     like_type=like_type)
                 return - logl_T.sum()
 
@@ -228,8 +229,7 @@ class dirBin1_staNet(dirSpW1_staNet):
             return beta_t_est, diag
 
     def ss_filt_est_beta_const(self, Y_T, X_T=None, beta=None, phi_T=None, like_type=2,
-                                        est_const_beta=False, dim_beta=1,
-                                        opt_large_steps=10, opt_n=1, opt_steps_phi=500, lRate_phi=0.01,
+                                        est_const_beta=False, opt_large_steps=10, opt_n=1, opt_steps_phi=500, lRate_phi=0.01,
                                         opt_steps_beta=400, lRate_beta=0.01,
                                         print_flag_phi=False, print_flag_beta=False,
                                        rel_improv_tol=5 * 1e-7, no_improv_max_count=30,
@@ -240,7 +240,7 @@ class dirBin1_staNet(dirSpW1_staNet):
         out = self.ss_filt_est_beta_dist_par_const(Y_T, X_T=X_T, beta=beta, phi_T=phi_T, dist_par_un=torch.ones(1),
                                                    like_type=like_type,
                                                    est_const_dist_par=False, dim_dist_par_un=torch.ones(1),
-                                                   est_const_beta=est_const_beta, dim_beta=dim_beta,
+                                                   est_const_beta=est_const_beta,
                                                    opt_large_steps=opt_large_steps, opt_n=opt_n,
                                                    opt_steps_phi=opt_steps_phi, lRate_phi=lRate_phi,
                                                    opt_steps_dist_par=0, lRate_dist_par=0,
@@ -294,8 +294,7 @@ class dirBin1_staNet(dirSpW1_staNet):
         expDegs = strIO_from_mat(self.exp_A(um_phi))
         return um_phi, expDegs
 
-    def sample_from_dgps(self, N, T, N_sample, dgp_type, X_T=None, n_reg=2, n_reg_beta_tv=1, dim_beta=1,
-                         um_phi=None, degb=None):
+    def sample_from_dgps(self, N, T, N_sample, dgp_type, X_T=None, n_reg=2, n_reg_beta_tv=1, um_phi=None, degb=None):
         if um_phi is None:
             #if the unconditional means are not Given then fix them
             um_phi, um_degs = self.dgp_phi_var_size(N, degMin=degb[0], degMax=degb[1])
@@ -333,10 +332,10 @@ class dirBin1_staNet(dirSpW1_staNet):
             phi_T = um_phi.unsqueeze(1) + torch.sin(6.28*(tens(range(T))/period + torch.randn((2*N, 1)))) * ampl
 
             if n_reg>0:
-                beta_T = torch.ones(dim_beta*n_reg, T)
+                beta_T = torch.ones(self.dim_beta*n_reg, T)
             if n_reg_beta_tv>0:
                 ampl_beta = 0.3
-                n_tv_beta_par = n_reg_beta_tv * dim_beta
+                n_tv_beta_par = n_reg_beta_tv * self.dim_beta
                 beta_T[:n_tv_beta_par, :] = beta_T[:n_tv_beta_par, :] + \
                                             torch.sin(6.28*tens(range(T))/period + torch.randn((n_tv_beta_par, 1))) * \
                                             ampl_beta
@@ -350,10 +349,10 @@ class dirBin1_staNet(dirSpW1_staNet):
                 phi_T[n, :] = rand_steps(minPar, maxPar, Nsteps, T)
 
             if n_reg > 0:
-                beta_T = torch.ones(dim_beta * n_reg, T)
+                beta_T = torch.ones(self.dim_beta * n_reg, T)
             if n_reg_beta_tv > 0:
                 ampl_beta = 0.3
-                n_tv_beta_par = n_reg_beta_tv * dim_beta
+                n_tv_beta_par = n_reg_beta_tv * self.dim_beta
                 beta_T[:n_tv_beta_par, T//2:] = beta_T[:n_tv_beta_par, T//2:] + ampl_beta
 
         if dgp_type == 'ar1':
@@ -365,9 +364,9 @@ class dirBin1_staNet(dirSpW1_staNet):
             maxPar = um_phi[n] + ampl[n] / 2
             phi_T = dgpAR(um_phi, B, sigma, T, minMax=[minPar, maxPar], scaling = scalType)
             if n_reg > 0:
-                beta_T = torch.ones(dim_beta * n_reg, T)
+                beta_T = torch.ones(self.dim_beta * n_reg, T)
             if n_reg_beta_tv > 0:
-                n_tv_beta_par = n_reg_beta_tv * dim_beta
+                n_tv_beta_par = n_reg_beta_tv * self.dim_beta
                 w = (1 - B) * beta_T[:n_tv_beta_par, 0]
                 beta_T[:n_tv_beta_par, 1:] = torch.randn((n_tv_beta_par, T-1)) * ampl
                 for t in range(1, T):
@@ -380,7 +379,7 @@ class dirBin1_staNet(dirSpW1_staNet):
         for t in range(T):
             phi = self.identify(phi_T[:, t])
             phi_T[:, t] = phi
-            beta = beta_T[:, t].view(dim_beta, n_reg)
+            beta = beta_T[:, t].view(self.dim_beta, n_reg)
             X_t = X_T[:, :, :, t]
 
             dist = self.dist_from_pars('bernoulli', phi, beta, X_t, None)
@@ -401,11 +400,11 @@ class dirBin1_dynNet_SD(dirBin1_staNet, dirSpW1_dynNet_SD):
         is flexible but for the moment we have a single parameter equal for all links
         """
 
-    def __init__(self, ovflw_lm=False, distribution='bernoulli', rescale_SD=False):
+    def __init__(self, ovflw_lm=False, distribution='bernoulli', dim_beta=1, rescale_SD=False):
         dirBin1_staNet.__init__(self, ovflw_lm=ovflw_lm, distribution=distribution)
         self.rescale_SD = rescale_SD
         self.n_reg_beta_tv = 0
-        self.dim_beta = 1
+        self.dim_beta = dim_beta
         self.backprop_sd = False
 
     def score_t(self, Y_t, phi_t, beta_t=None, X_t=None, dist_par_un=torch.zeros(1), backprop_score=False,
@@ -518,7 +517,7 @@ class dirBin1_dynNet_SD(dirBin1_staNet, dirSpW1_dynNet_SD):
 
 
 
-def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T=None, dim_beta=None,
+def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T=None, dim_beta=1,
                                 learn_rate=0.01, T_test=10,
                                 N_steps=15000, print_every=1000, ovflw_lm=True, rescale_score=False):
 
@@ -526,7 +525,7 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
     N = Y_T.shape[0]
     T = Y_T.shape[2]
 
-    model = dirBin1_dynNet_SD(ovflw_lm=ovflw_lm, rescale_SD=rescale_score)
+    model = dirBin1_dynNet_SD(dim_Beta=dim_beta, ovflw_lm=ovflw_lm, rescale_SD=rescale_score)
     phi_T_0 = torch.zeros(N * 2, T)
     for t in range(T):
         phi_T_0[:, t] = model.start_phi_form_obs(Y_T[:, :, t])
@@ -577,10 +576,9 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
             phi_ss_est_T, dist_par_un, beta_est, diag_joint = \
                 model.ss_filt_est_beta_const(Y_T,
                                              X_T=X_T,
-                                             beta=torch.zeros(dim_beta, 1),
+                                             beta=torch.zeros(model.dim_beta, 1),
                                              phi_T=phi_ss_est_T_0,
                                              est_const_beta=True,
-                                             dim_beta=dim_beta,
                                              opt_large_steps=N_steps // N_steps_iter,
                                              opt_steps_phi=N_steps_iter,
                                              lRate_phi=learn_rate,
@@ -596,7 +594,7 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
             file_path = SAVE_FOLD + '/dirBin1_X0_SS_est_lr_phi' + \
                         str(learn_rate) + '_lr_beta_' + str(learn_rate_beta) + '_N_' + str(N) + '_T_' + str(T) + \
                         '_N_steps_' + str(N_steps) + \
-                        '_dim_beta_' + str(dim_beta) + '.npz'
+                        '_dim_beta_' + str(model.dim_beta) + '.npz'
             print(file_path)
             np.savez(file_path, phi_ss_est_T.detach(), beta_est.detach(), diag_joint,
                      N_steps, learn_rate, learn_rate_beta)
@@ -637,11 +635,11 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
             n_reg = X_T.shape[2]
             W_est, B_est, A_est, dist_par_un_est, beta_const_est, sd_par_0, diag = \
                 model.estimate_SD_X0(Y_T, X_T=X_T,
-                                     dim_beta=dim_beta, n_beta_tv=n_beta_tv,
+                                     n_beta_tv=n_beta_tv,
                                      B0=torch.cat((B0, torch.zeros(n_beta_tv))),
                                      A0=torch.cat((A0, torch.zeros(n_beta_tv))),
                                      W0=torch.cat((W0, torch.zeros(n_beta_tv))),
-                                     beta_const_0=torch.randn(dim_beta, n_reg - n_beta_tv)*0.01,
+                                     beta_const_0=torch.randn(self.dim_beta, n_reg - n_beta_tv)*0.01,
                                      opt_steps=N_steps,
                                      lRate=learn_rate,
                                      sd_par_0=phi_ss_est_T_0[:, :5].mean(dim=1),
@@ -657,7 +655,7 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
             file_path = SAVE_FOLD + '/dirBin1_X0_SD_est_lr_' + \
                         str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + 'T_test_' + str(T_test) + \
                         '_N_steps_' + str(N_steps) + '_N_BA_' + str(N_BA) + \
-                        '_dim_beta_' + str(dim_beta) + '.npz'
+                        '_dim_beta_' + str(self.dim_beta) + '.npz'
 
             print(file_path)
 
@@ -666,7 +664,7 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
 
 
 def load_dirBin1_models(N, T, filter_type, regr_flag, SAVE_FOLD,
-                        dim_beta=None, n_beta_tv=0, learn_rate_beta=0.005,
+                        dim_beta=1, n_beta_tv=0, learn_rate_beta=0.005,
                         learn_rate=0.01, T_test=10,
                         N_steps=15000, ovflw_lm=True, rescale_score=False,
                         return_last_diag=False):
@@ -687,7 +685,7 @@ def load_dirBin1_models(N, T, filter_type, regr_flag, SAVE_FOLD,
             file_path = SAVE_FOLD + '/dirBin1_X0_SS_est_lr_phi' + \
                         str(learn_rate) + '_lr_beta_' + str(learn_rate_beta) + '_N_' + str(N) + '_T_' + str(T) + \
                         '_N_steps_' + str(N_steps) + \
-                        '_dim_beta_' + str(dim_beta) + '.npz'
+                        '_dim_beta_' + str(model.dim_beta) + '.npz'
             print(file_path)
             l_dat = np.load(file_path)
             phi_ss_est_T, beta_est,\
@@ -720,7 +718,7 @@ def load_dirBin1_models(N, T, filter_type, regr_flag, SAVE_FOLD,
             file_path = SAVE_FOLD + '/dirBin1_X0_SD_est_lr_' + \
                         str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + 'T_test_' + str(T_test) + \
                         '_N_steps_' + str(N_steps) + '_N_BA_' + str(N_BA) + \
-                        '_dim_beta_' + str(dim_beta) + '.npz'
+                        '_dim_beta_' + str(model.dim_beta) + '.npz'
 
             print(file_path)
 
