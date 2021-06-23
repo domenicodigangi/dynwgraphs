@@ -12,23 +12,31 @@ import os
 from .utils.tensortools import splitVec, tens, putZeroDiag, putZeroDiag_T, soft_lu_bound, strIO_from_mat
 from .utils.opt import optim_torch
 from torch.autograd import grad
+import torch.nn as nn
 #----------------------------------- Zero Augmented Static model functions
 #self = dirSpW1_dynNet_SD(ovflw_lm=True, rescale_SD = False )
 
 
 
-class dirSpW1_staNet(object):
+class dirSpW1_staNet(nn.Module):
     """
     This a class  for directed weighted sparse static networks (or sequences), modelled with a zero augmented distribution, one  parameter per each node (hence the 1 in the name)
     """
 
-    def __init__(self, ovflw_lm=True, distr='gamma', dim_dist_par_un = 1, dim_beta = 1):
+    def __init__(self, N, T, ovflw_lm=True, distr='gamma',  dim_dist_par_un = 1, dim_beta = 1):
+        super(dirSpW1_staNet, self).__init__()
         self.ovflw_lm = ovflw_lm
+        self.N = N
+        self.T = T
         self.distr = distr
         self.dim_dist_par_un = dim_dist_par_un
         self.dim_beta = dim_beta
         self.ovflw_exp_L_limit = -50
         self.ovflw_exp_U_limit = 40
+
+    def divide_parameters(self, all_par_vec):
+        """ divide the vector of all parameters into a named tuple
+        """
 
     def regr_product(self, beta, X_t):
         """
@@ -148,7 +156,7 @@ class dirSpW1_staNet(object):
         return distr_obj
 
     def loglike_t(self, Y_t, phi, beta=None, X_t=None, dist_par_un=None, like_type=2):
-        """ The log likelihood of the zero augmented gamma network model as a funciton of the
+        """ The log likelihood of the zero augmented gamma network model as a function of the
         observations and the matrices of parameters p_mat (pi = p/(1+p), where pi is the prob of being
         nnz), and EYcond_mat E[Y_ij |Y_ij > 0 ]
         """
@@ -651,8 +659,8 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
         will be flexible but for the moment we have a single parameter equal for all links
         """
 
-    def __init__(self, ovflw_lm=False, distr='gamma', rescale_SD=False, backprop_sd=False, dim_dist_par_un = 1, dim_beta = 1):
-        super().__init__(ovflw_lm=ovflw_lm, distr=distr, dim_dist_par_un = dim_dist_par_un, dim_beta = dim_beta)
+    def __init__(self, N, T, ovflw_lm=False, distr='gamma', rescale_SD=False, backprop_sd=False, dim_dist_par_un = 1, dim_beta = 1):
+        super().__init__(N, T, ovflw_lm=ovflw_lm, distr=distr, dim_dist_par_un = dim_dist_par_un, dim_beta = dim_beta)
         self.rescale_SD = rescale_SD
         self.n_reg_beta_tv = 0
         self.backprop_sd = backprop_sd

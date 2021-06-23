@@ -18,8 +18,8 @@ from .dirSpW1_dynNets import dirSpW1_dynNet_SD, dirSpW1_staNet
 
 
 class dirBin1_staNet(dirSpW1_staNet):
-    def __init__(self, ovflw_lm=False, distribution='bernoulli', dim_beta=1):
-        dirSpW1_staNet.__init__(self, ovflw_lm=ovflw_lm, distribution=distribution)
+    def __init__(self, ovflw_lm=False, distr='bernoulli', dim_beta=1):
+        dirSpW1_staNet.__init__(self, ovflw_lm=ovflw_lm, distr=distr)
         self.n_reg_beta_tv = 0
         self.dim_beta = dim_beta
         self.ovflw_exp_L_limit = -50
@@ -153,7 +153,7 @@ class dirBin1_staNet(dirSpW1_staNet):
         phi_0 = self.set_zero_deg_par(Y, phi_0, degIO=degIO)
         return phi_0.clone()
 
-    def dist_from_pars(self, distribution, phi, beta, X_t, dist_par_un, A_t=None):
+    def dist_from_pars(self, distr, phi, beta, X_t, dist_par_un, A_t=None):
         """
         return a pytorch distribution matrix valued, from the model's parameters
         """
@@ -400,8 +400,8 @@ class dirBin1_dynNet_SD(dirBin1_staNet, dirSpW1_dynNet_SD):
         is flexible but for the moment we have a single parameter equal for all links
         """
 
-    def __init__(self, ovflw_lm=False, distribution='bernoulli', dim_beta=1, rescale_SD=False):
-        dirBin1_staNet.__init__(self, ovflw_lm=ovflw_lm, distribution=distribution)
+    def __init__(self, ovflw_lm=False, distr='bernoulli', dim_beta=1, rescale_SD=False):
+        dirBin1_staNet.__init__(self, ovflw_lm=ovflw_lm, distr=distr)
         self.rescale_SD = rescale_SD
         self.n_reg_beta_tv = 0
         self.dim_beta = dim_beta

@@ -6,23 +6,25 @@ Created on Tue Aug 13 17:56:03 2019
 @author: domenico
 """
 
-#%% Load WTN Data
+#%% import packages
+from typing import NamedTuple
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-import sys
-sys.path.append("./src/")
-from utils import tens, splitVec
+from dynwgraphs.utils.tensortools import tens, splitVec
+
+#%%
 #load yearly world Trade networks
-ld_data = np.load("./data/world_trade_network/world_trade_net_T.npz",
-                  allow_pickle=True)
+proj_home_path = "../../../"
+ld_data = np.load(f"{proj_home_path}/data/world_trade_network/world_trade_net_T.npz", allow_pickle=True)
+
 wtn_T, all_y, nodes= ld_data["wtn_T"], ld_data["all_y"], ld_data["nodes"]
 dist_T, scaling_infl = ld_data["dist_T"], ld_data["scaling_infl"]
 
 # Set unit measure and  rescale for inflation
 unit_measure = 1e6
 
-Y_T_all = tens(wtn_T * scaling_infl[:, 1])
+Y_T_all = tens(wtn_T * scaling_infl[:, 1])/unit_measure
 Y_T = Y_T_all[:, :, 1:]
 
 # X_T = tens(dist_T).log().unsqueeze(2)#torch.tensor((dist_T - dist_T.mean())/dist_T.std()).unsqueeze(2)
@@ -31,9 +33,6 @@ X_T = Y_T_all[:, :, :-1].log().unsqueeze(2)
 X_T[~torch.isfinite(X_T)] = 0
 N = Y_T.shape[0]
 T = Y_T.shape[2]
-SAVE_FOLD = './data/estimates_real_data/WTN'
-from dirSpW1_dynNets import  dirSpW1_staNet, dirSpW1_dynNet_SD
-
 t =T -12
 Y_t = Y_T[:, :, t]
 X_t=X_T[:, :, :, t]
@@ -43,50 +42,32 @@ Y_tp1 = Y_T[:, :, t+1]
 X_T_multi = X_T.repeat_interleave(2, dim=2)
 X_T_multi[:, :, 1, :] += 1
 
-
-
-
 #%% Test starting points for phi
-model = dirSpW1_dynNet_SD(ovflw_lm=True )
-model.distr = 'gamma'
+from dynwgraphs.dirSpW1_dynNets_new import  dirSpW1_funs, dirSpW1_sequence_ss
+
+model = dirSpW1_sequence_ss(Y_T, ovflw_lm=True, distr = 'gamma')
+
+beta_X = (None, None)
+
 phi_0 = model.start_phi_from_obs(Y_t)
+model.cond_exp_Y(phi_0, *beta_X)
 
-print((model.cond_exp_Y(phi_0)[Y_t>0].sum() - Y_t.sum())/ Y_t.sum())
-
-
-
-#%%
-# A_t = tens(Y_t > 0)
-sigma_i = torch.ones(N)
-sigma_o = torch.ones(N)
-
-print((model.cond_exp_Y(phi_0).sum() - Y_t.sum())/ Y_t.sum())
-phi_i, phi_o = splitVec(phi_0.clone())
-new_phi_i = torch.log(((Y_t /phi_o.exp()).sum(dim=1))/(A_t.sum(dim=1)))
-new_phi_o = torch.log(((Y_t /phi_i.exp().unsqueeze(-1)).sum(dim=0))/(A_t.sum(dim=0)))
-phi_i[~torch.isnan(new_phi_i)] = new_phi_i[~torch.isnan(new_phi_i)]
-phi_o[~torch.isnan(new_phi_o)] = new_phi_o[~torch.isnan(new_phi_o)]
-print(model.cond_exp_Y(torch.cat((phi_i, phi_o))).sum())
-
+print((model.cond_exp_Y(phi_0, *beta_X)[Y_t>0].sum() - Y_t.sum())/ Y_t.sum())
+print((model.cond_exp_Y(phi_0, *beta_X).sum() - Y_t.sum())/ Y_t.sum())
 Y_t.sum()
 
-(Y_t /phi_o.exp()).sum(dim=1)
-
-S_i = Y_t.sum(dim=0)
-S_o = Y_t.sum(dim=1)
-phi_t_0_i = (S_i / K_i).log()
-phi_t_0_o = (S_o / K_o).log()
-
 #%% Test single snapshot estimates of  phi
-model = dirSpW1_dynNet_SD(ovflw_lm=True  )
-model.distr = 'lognormal'
+model = dirSpW1_sequence_ss(Y_T, ovflw_lm=True, distr = 'gamma') # 'lognormal')
 beta_t = torch.zeros(N)
 diag = []
+
+phi_ss_t, diag_iter =  model.estimate_ss_t(t, est_beta = False, phi_0=phi_0, plot_flag=False, print_flag=False, opt_steps=5000,dist_par_un_t=torch.zeros(1))
+
+
 wI, wO = 1 + torch.randn(N), torch.randn(N)
 phi_0 = torch.cat((torch.ones(N) * wI, torch.ones(N) * wO)) * 0.001
 for i in range(3):
-    phi_ss_t, diag_iter =  model.estimate_ss_t(Y_t,phi_0=phi_0, plot_flag=False, print_flag=False, opt_steps=500,
-                                                 dist_par_un_t=torch.zeros(1))
+    phi_ss_t, diag_iter =  model.estimate_ss_t(t, phi_0=phi_0, plot_flag=False, print_flag=False, opt_steps=5000,dist_par_un_t=torch.zeros(1))
     phi_0=phi_ss_t
     diag.append(diag_iter)
     print(model.check_tot_exp(Y_t, phi_ss_t) )
