@@ -104,3 +104,9 @@ ENV/
 # IDE settings
 .vscode/
 env_dynwgraphs/
+
+# tensorboard logs
+dev_utils/runs
+
+# temp data
+dev_utils/temp_data

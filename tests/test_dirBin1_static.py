@@ -45,7 +45,7 @@ zero_deg_par_i, zero_deg_par_o = model.zero_deg_par_fun(Y_t, phi)
 phi[:N][phi[:N] == 0] = zero_deg_par_i
 phi[N:][phi[N:] == 0] = zero_deg_par_o
 
-phi_ss_t, diag_iter =  model.estimate_ss_t(Y_t, phi_0=phi_0, plot_flag=False, print_flag=True, opt_steps=2500,
+phi_ss_t, diag_iter =  model.estimate_ss_t(Y_t, phi_0=phi_0, plot_flag=False, print_flag=True, max_opt_iter=2500,
                                              dist_par_un_t=None, print_every=500)
 print(model.check_tot_exp(Y_t, phi_ss_t) )
 
@@ -53,8 +53,8 @@ print(model.check_tot_exp(Y_t, phi_ss_t) )
 model = dirBin1_dynNet_SD(ovflw_lm=False, rescale_SD = False )
 degIO = strIO_from_mat(Y_t)
 
-phi_t, diag = model.estimate_ss_t_bin_from_degIO(degIO, min_n_iter=500,
-                                    opt_steps=2500, opt_n=1, lRate=0.01,
+phi_t, diag = model.estimate_ss_t_bin_from_degIO(degIO, min_opt_iter=500,
+                                    max_opt_iter=2500, opt_n=1, lr=0.01,
                                     print_flag=True, plot_flag=False, print_every=500)
 
 Y_t.sum()
@@ -66,7 +66,7 @@ X_t = X_T[t].unsqueeze(1).unsqueeze(1)
 model = dirBin1_dynNet_SD()
 par_ss_t, diag = model.estimate_ss_t( Y_t, X_t=X_t, beta_t=None, phi_0=None, dist_par_un_t=None, like_type=2,
                                      est_beta=True, dim_beta=1,
-                                        opt_steps=50, print_flag=True)
+                                        max_opt_iter=50, print_flag=True)
 
 #%% test estimate of sequence of phi given static beta
 model = dirBin1_staNet(ovflw_lm=True)
@@ -75,7 +75,7 @@ n_reg = X_T.shape[2]
 beta = torch.ones(dim_beta, n_reg) * 1
 all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=X_T_multi, beta=beta, phi_T_0=None,
                                          est_beta=False,
-                                        opt_steps=15, opt_n=1, lRate=0.01,
+                                        max_opt_iter=15, opt_n=1, lr=0.01,
                                         print_flag=True, plot_flag=False, print_every=10)
 
 plt.plot(diag_T)
@@ -83,7 +83,7 @@ plt.plot(diag_T)
 model = dirBin1_staNet(ovflw_lm=True)
 all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=None, beta=None, phi_T_0=None,
                                          est_beta=False,
-                                        opt_steps=4, opt_n=1, lRate=0.01,
+                                        max_opt_iter=4, opt_n=1, lr=0.01,
                                         print_flag=True, plot_flag=False, print_every=10)
 
 phi_ss_est_T = all_par_est_T[:2*N, :]
@@ -91,15 +91,15 @@ dim_beta = 1
 model = dirBin1_dynNet_SD(ovflw_lm=True  )
 beta_t_est, diag_beta_t = model.estimate_beta_const_given_phi_T(Y_T, X_T_multi, phi_ss_est_T.clone().detach(),
                                                                   dim_beta=dim_beta, dist_par_un=0,
-                                                                  opt_steps=10, print_flag=True, plot_flag=True)
+                                                                  max_opt_iter=10, print_flag=True, plot_flag=True)
 
 #%% test estimate of beta and phi_T
 model = dirBin1_dynNet_SD(ovflw_lm=True  )
 phi_T, dist_par_un, beta, diag = \
 model.ss_filt_est_beta_const(Y_T, X_T=X_T_multi, beta=None, phi_T=None,
                                       est_const_beta=True, dim_beta=1,
-                                      opt_large_steps=2, opt_n=1, opt_steps_phi=5, lRate_phi=0.01,
-                                      opt_steps_beta=4, lRate_beta=0.01,
+                                      opt_large_steps=2, opt_n=1, max_opt_iter_phi=5, lr_phi=0.01,
+                                      max_opt_iter_beta=4, lr_beta=0.01,
                                       print_flag_phi=False, print_flag_beta=True,
                                       print_every=1)
 
@@ -110,9 +110,9 @@ plt.plot(-np.array(diag))
 
 
 #%% Define Parameters for Score Driven Dynamics
-N_opt_steps_max = 10000
-N_opt_steps_each_iter = 200
-N_iter = N_opt_steps_max//N_opt_steps_each_iter
+N_max_opt_iter_max = 10000
+N_max_opt_iter_each_iter = 200
+N_iter = N_max_opt_iter_max//N_max_opt_iter_each_iter
 N_BA = N
 
 B = torch.cat([torch.ones(N_BA) * 0.85, torch.ones(N_BA) * 0.85])
@@ -135,7 +135,7 @@ model.check_tot_exp(Y_t, model.start_phi_form_obs(Y_t), one_dim_out=False)
 
 #%% Tet score driven estimates
 model = dirBin1_dynNet_SD(ovflw_lm=True, rescale_SD=False)
-W_est, B_est, A_est, diag = model.estimate_SD(Y_T, B0=B, A0=A, W0=W, opt_steps=20, lRate=0.01,
+W_est, B_est, A_est, diag = model.estimate_SD(Y_T, B0=B, A0=A, W0=W, max_opt_iter=20, lr=0.01,
                                                 dim_dist_par_un=1, print_flag=True, plot_flag=False,
                                                                  est_dis_par_un=False)
 
@@ -153,8 +153,8 @@ W_est, B_est, A_est, dist_par_un_est, beta_const_est,  diag = model.estimate_SD_
                                                                 A0=torch.cat((A, torch.zeros(n_beta_tv))),
                                                                 W0=torch.cat((W, torch.zeros(n_beta_tv))),
                                                                 beta_const_0= torch.zeros(dim_beta, n_reg-n_beta_tv),
-                                                                opt_steps=50,
-                                                                lRate=0.01,
+                                                                max_opt_iter=50,
+                                                                lr=0.01,
                                                                 print_flag=True, plot_flag=False)
 
 
@@ -163,9 +163,9 @@ W_est, B_est, A_est, dist_par_un_est, beta_const_est,  diag = model.estimate_SD_
 model = dirBin1_dynNet_SD(ovflw_lm=True, rescale_SD=False)
 N = 30
 T = 100
-N_opt_steps_max = 10000
-N_opt_steps_each_iter = 200
-N_iter = N_opt_steps_max//N_opt_steps_each_iter
+N_max_opt_iter_max = 10000
+N_max_opt_iter_each_iter = 200
+N_iter = N_max_opt_iter_max//N_max_opt_iter_each_iter
 N_BA = N
 n_reg = 2
 n_beta_tv = 1
@@ -199,8 +199,8 @@ W_est, B_est, A_est, dist_par_un_est, beta_const_est,  diag = model.estimate_SD_
                                                         A0=A,
                                                         W0=W,
                                                         beta_const_0=beta_const,
-                                                        opt_steps=20,
-                                                        lRate=0.01,
+                                                        max_opt_iter=20,
+                                                        lr=0.01,
                                                         print_flag=True, plot_flag=False)
 
 #%% Test missp dgps

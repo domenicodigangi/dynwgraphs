@@ -69,7 +69,7 @@ for n_p in range(len(p_list)):
 
         W_est, B_est, A_est, beta_est, diag = model.estimateW_SD(Y_T, X_T, B0=B0, A0=A0, W0=W0,
                                                              dim_beta=dim_beta, Steps=N_steps,
-                                                             lRate=learn_rate)
+                                                             lr=learn_rate)
         all_W[:, n, n_p] = W_est.detach().numpy()
         all_B[:, n, n_p] = B_est.detach().numpy()
         all_A[:, n, n_p] = A_est.detach().numpy()

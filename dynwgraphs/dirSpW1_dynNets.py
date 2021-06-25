@@ -221,8 +221,8 @@ class dirSpW1_staNet(nn.Module):
         return dist_par_un0
 
     def estimate_ss_t(self, Y_t, X_t=None, beta_t=None, phi_0=None, dist_par_un_t=None, like_type=2,
-                        est_dist_par=False, est_beta=False, min_n_iter=200,
-                        opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10):
+                        est_dist_par=False, est_beta=False, min_opt_iter=200,
+                        max_opt_iter=5000, opt_n=1, lr=0.01, print_flag=True, plot_flag=False, print_every=10):
         """
         single snapshot Maximum logLikelihood estimate of phi_t and, if not given as input, also of dist_par_un_t and beta_t
         """
@@ -257,8 +257,8 @@ class dirSpW1_staNet(nn.Module):
                 return - self.loglike_t(Y_t, unPar, X_t=X_t, beta=beta_t, dist_par_un=dist_par_un_t,
                                           like_type=like_type)
 
-            all_par_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                            min_n_iter=min_n_iter,
+            all_par_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
+                                            min_opt_iter=min_opt_iter,
                                             plot_flag=plot_flag, print_flag=print_flag, print_every=print_every)
 
         elif (not est_beta) and (est_dist_par): # estimate  phi_t and dist_par
@@ -266,8 +266,8 @@ class dirSpW1_staNet(nn.Module):
                 return - self.loglike_t(Y_t, unPar[:2*N], X_t=X_t, beta=beta_t, dist_par_un=unPar[2*N:],
                                           like_type=like_type)
 
-            all_par_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                            min_n_iter=min_n_iter,
+            all_par_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
+                                            min_opt_iter=min_opt_iter,
                                             plot_flag=plot_flag, print_flag=print_flag, print_every=print_every)
 
         elif (est_beta) and (not est_dist_par): # estimate phi_t dist_par and and beta
@@ -277,8 +277,8 @@ class dirSpW1_staNet(nn.Module):
                                           dist_par_un=None,
                                           like_type=like_type)
 
-            all_par_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                            min_n_iter=min_n_iter,
+            all_par_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
+                                            min_opt_iter=min_opt_iter,
                                             plot_flag=plot_flag, print_flag=print_flag, print_every=print_every)
 
         elif (est_beta) and (est_dist_par): # estimate phi_t dist_par and and beta
@@ -288,8 +288,8 @@ class dirSpW1_staNet(nn.Module):
                                           dist_par_un=unPar[2*N:2*N + N_dis_par],
                                           like_type=like_type)
 
-            all_par_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                            min_n_iter=min_n_iter,
+            all_par_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
+                                            min_opt_iter=min_opt_iter,
                                             plot_flag=plot_flag, print_flag=print_flag, print_every=print_every)
 
         #Identify the phi_t part
@@ -299,9 +299,9 @@ class dirSpW1_staNet(nn.Module):
 
     def ss_filt(self, Y_T, X_T=None, beta=None, phi_T_0=None, dist_par_un=None, like_type=2,
                 est_dist_par=False, est_beta=False,
-                opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10,
+                max_opt_iter=5000, opt_n=1, lr=0.01, print_flag=True, plot_flag=False, print_every=10,
                 rel_improv_tol=5*1e-7, no_improv_max_count=30,
-                min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
+                min_opt_iter=150, bandwidth=50, small_grad_th=1e-6):
 
         """
         Single snapsot sequence filter.
@@ -338,11 +338,11 @@ class dirSpW1_staNet(nn.Module):
                                                      dist_par_un_t=dist_par_un,
                                                      est_beta=est_beta,
                                                     beta_t=beta, X_t=X_t,
-                                                     opt_steps=opt_steps,
+                                                     max_opt_iter=max_opt_iter,
                                                      like_type=like_type,
-                                                     lRate=lRate, opt_n=opt_n,
+                                                     lr=lr, opt_n=opt_n,
                                                      print_flag=print_flag, plot_flag=plot_flag,
-                                                     print_every=print_every, min_n_iter=min_n_iter)
+                                                     print_every=print_every, min_opt_iter=min_opt_iter)
 
             all_par_est_T[:, t] = all_par_t
             diag_T.append(diag_t)
@@ -352,10 +352,10 @@ class dirSpW1_staNet(nn.Module):
 
     def estimate_dist_par_const_given_phi_T(self, Y_T, phi_T, X_T=None, beta=None,
                                             dist_par_un_0=None, like_type=2,
-                                            opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False,
+                                            max_opt_iter=5000, opt_n=1, lr=0.01, print_flag=True, plot_flag=False,
                                             print_every=10,
                                             rel_improv_tol=5*1e-7, no_improv_max_count=30,
-                                            min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
+                                            min_opt_iter=150, bandwidth=50, small_grad_th=1e-6):
 
         """single snapshot Maximum logLikelihood estimate given beta_t"""
 
@@ -377,19 +377,19 @@ class dirSpW1_staNet(nn.Module):
                                                    dist_par_un=unPar, like_type=like_type)
             return - logl_T
 
-        dist_par_un_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
+        dist_par_un_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
                                             plot_flag=plot_flag, print_flag=print_flag, print_every=print_every,
                                             print_fun=lambda x: torch.exp(x),
                                             rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-                                            min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
+                                            min_opt_iter=min_opt_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
 
         return dist_par_un_est, diag
 
     def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dist_par_un,  beta_0=None, like_type=2,
-                                        opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False,
+                                        max_opt_iter=5000, opt_n=1, lr=0.01, print_flag=True, plot_flag=False,
                                         print_every=10,
                                         rel_improv_tol=5*1e-7, no_improv_max_count=30,
-                                        min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
+                                        min_opt_iter=150, bandwidth=50, small_grad_th=1e-6):
 
         """single snapshot Maximum logLikelihood estimate given beta_t"""
 
@@ -410,10 +410,10 @@ class dirSpW1_staNet(nn.Module):
                                                    dist_par_un=dist_par_un, like_type=like_type)
             return - logl_T
 
-        beta_t_est_flat, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
+        beta_t_est_flat, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
                                        plot_flag=plot_flag, print_flag=print_flag, print_every=print_every,
                                         rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-                                        min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
+                                        min_opt_iter=min_opt_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
 
         beta_t_est = beta_t_est_flat.view(self.dim_beta, n_reg)
         return beta_t_est, diag
@@ -421,13 +421,13 @@ class dirSpW1_staNet(nn.Module):
     def ss_filt_est_beta_dist_par_const(self, Y_T, X_T=None, beta=None, phi_T=None, dist_par_un=None, like_type=2,
                                           est_const_dist_par=False, 
                                           est_const_beta=False,
-                                          opt_large_steps=10, opt_n=1,   opt_steps_phi=500, lRate_phi=0.01,
-                                          opt_steps_dist_par=500, lRate_dist_par=0.01,
-                                          opt_steps_beta=400, lRate_beta=0.01,
+                                          opt_large_steps=10, opt_n=1,   max_opt_iter_phi=500, lr_phi=0.01,
+                                          max_opt_iter_dist_par=500, lr_dist_par=0.01,
+                                          max_opt_iter_beta=400, lr_beta=0.01,
                                           print_flag_phi=False, print_flag_dist_par=False, print_flag_beta=False,
                                           print_every=50,
                                           rel_improv_tol=5*1e-7, no_improv_max_count=30,
-                                          min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
+                                          min_opt_iter=150, bandwidth=50, small_grad_th=1e-6):
         """
         Static sequence filter.
          return the sequence  of single snapshot estimates for phi and the corresponding estimate for beta_t
@@ -458,10 +458,10 @@ class dirSpW1_staNet(nn.Module):
                                             dist_par_un=dist_par_un,
                                             like_type=like_type, est_dist_par=False, 
                                             est_beta=False, 
-                                            opt_steps=opt_steps_phi, opt_n=opt_n,
-                                            lRate=lRate_phi, print_flag=print_flag_phi, print_every=print_every,
+                                            max_opt_iter=max_opt_iter_phi, opt_n=opt_n,
+                                            lr=lr_phi, print_flag=print_flag_phi, print_every=print_every,
                                             rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-                                            min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
+                                            min_opt_iter=min_opt_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
 
 
             diag.append(self.like_seq(Y_T, phi_T, dist_par_un_T=dist_par_un, X_T=X_T, beta=beta).item())
@@ -471,12 +471,12 @@ class dirSpW1_staNet(nn.Module):
                 beta, diag_beta = self.estimate_beta_const_given_phi_T(Y_T, X_T, phi_T.clone().detach(), 
                                                                         dist_par_un=dist_par_un.clone().detach(),
                                                                         beta_0=beta.clone().detach(),
-                                                                        lRate=lRate_beta,     opt_steps=opt_steps_beta,
+                                                                        lr=lr_beta,     max_opt_iter=max_opt_iter_beta,
                                                                         print_flag=print_flag_beta,
                                                                         print_every=print_every,
                                                                         rel_improv_tol=rel_improv_tol,
                                                                         no_improv_max_count=no_improv_max_count,
-                                                                        min_n_iter=min_n_iter, bandwidth=bandwidth,
+                                                                        min_opt_iter=min_opt_iter, bandwidth=bandwidth,
                                                                         small_grad_th=small_grad_th)
 
                 diag.append(self.like_seq(Y_T, phi_T, dist_par_un_T=dist_par_un, X_T=X_T, beta=beta).item())
@@ -489,13 +489,13 @@ class dirSpW1_staNet(nn.Module):
                                                                             self.dim_dist_par_un,
                                                                             X_T=X_T, beta=beta.clone().detach(),
                                                                             dist_par_un_0=dist_par_un,
-                                                                            lRate=lRate_dist_par,
-                                                                            opt_steps=opt_steps_dist_par,
+                                                                            lr=lr_dist_par,
+                                                                            max_opt_iter=max_opt_iter_dist_par,
                                                                             print_flag=print_flag_dist_par,
                                                                             print_every=print_every,
                                                                             rel_improv_tol=rel_improv_tol,
                                                                             no_improv_max_count=no_improv_max_count,
-                                                                            min_n_iter=min_n_iter,
+                                                                            min_opt_iter=min_opt_iter,
                                                                             bandwidth=bandwidth,
                                                                             small_grad_th=small_grad_th)
 
@@ -771,8 +771,8 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
                 else:
                     est_dist_par = True
                 par_0, diag = self.estimate_ss_t(Y_0, X_t=X_0, beta_t=None, phi_0=None, dist_par_un_t=None,
-                                  est_dist_par=est_dist_par, est_beta=est_beta, min_n_iter=250,
-                                  opt_steps=1500, opt_n=1, lRate=0.01, print_flag=False)
+                                  est_dist_par=est_dist_par, est_beta=est_beta, min_opt_iter=250,
+                                  max_opt_iter=1500, opt_n=1, lr=0.01, print_flag=False)
 
                 phi_0 = par_0[:2*N]
 
@@ -948,11 +948,11 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
             raise Exception("seq must be used as a dgp or as a filter")
         return p_t.unsqueeze(2).repeat(1, 1, T)
 
-    def estimate_SD(self, Y_T, opt_n=1, opt_steps=800, lRate=0.005, plot_flag=False, print_flag=False,
+    def estimate_SD(self, Y_T, opt_n=1, max_opt_iter=800, lr=0.005, plot_flag=False, print_flag=False,
                     B0=None, A0=None, W0=None, dist_par_un=None, est_dis_par_un=False,
                     sd_par_0=None, init_filt_um=False,
                     print_every=200, rel_improv_tol=1e-8, no_improv_max_count=30,
-                                      min_n_iter=750, bandwidth=250, small_grad_th=1e-6):
+                                      min_opt_iter=750, bandwidth=250, small_grad_th=1e-6):
 
         N = Y_T.shape[0]
         if dist_par_un is None:
@@ -990,10 +990,10 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
                 return - self.loglike_sd_filt(unPar[:n], reBA[:n_B], reBA[n_B:n_B + n_A], Y_T,
                                                 sd_par_0=sd_par_0, dist_par_un=dist_par_un)
 
-        unPar_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
+        unPar_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
                                       plot_flag=plot_flag, print_flag=print_flag, print_every=print_every,
                                       rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-                                      min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
+                                      min_opt_iter=min_opt_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
 
         w_est = unPar_est[:n].clone()
         re_BA_est = self.un2re_BA_par(unPar_est[n: n + n_B + n_A])
@@ -1006,11 +1006,11 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
 
     def estimate_SD_X0(self, Y_T, X_T, n_beta_tv=None,
                        sd_par_0=None, init_filt_um=False,
-                        opt_n=1, opt_steps=800, lRate=0.005,
+                        opt_n=1, max_opt_iter=800, lr=0.005,
                         plot_flag=False, print_flag=False, print_every=10,
                         B0=None, A0=None, W0=None, beta_const_0=None, est_beta=False,  dist_par_un=None,
                        est_dis_par_un=False, rel_improv_tol=1e-8, no_improv_max_count=30,
-                                      min_n_iter=750, bandwidth=250, small_grad_th=1e-6):
+                                      min_opt_iter=750, bandwidth=250, small_grad_th=1e-6):
         N = Y_T.shape[0]
         n_reg = X_T.shape[2]
         if n_beta_tv is not None:
@@ -1091,10 +1091,10 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
                                             beta_const=unPar[n + 2 * N_BA:].view(self.dim_beta, n_reg_beta_c),
                                             X_T=X_T)
 
-        unPar_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
+        unPar_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
                                       plot_flag=plot_flag, print_flag=print_flag, print_every=print_every,
                                       rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-                                      min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
+                                      min_opt_iter=min_opt_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
 
         w_est = unPar_est[:n].clone()
         re_BA_est = self.un2re_BA_par(unPar_est[n:n + 2*N_BA])
@@ -1125,11 +1125,11 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
 
         model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, distribution=distribution, rescale_SD=rescale_score, dim_beta=dim_beta,  dim_dist_par_un=dim_dist_par_un)
         rel_improv_tol_SS = 1e-6
-        min_n_iter_SS = 20
-        bandwidth_SS = min_n_iter_SS
+        min_opt_iter_SS = 20
+        bandwidth_SS = min_opt_iter_SS
         no_improv_max_count_SS = 20
         rel_improv_tol_SD = 1e-7
-        min_n_iter_SD = 750
+        min_opt_iter_SD = 750
         bandwidth_SD = 250
         no_improv_max_count_SD = 50
         if filter_type == 'SS':
@@ -1142,15 +1142,15 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                                                           est_const_dist_par=True,
                                                           est_const_beta=False,
                                                           opt_large_steps=N_steps // N_steps_iter,
-                                                          opt_steps_phi=N_steps_iter,
-                                                          lRate_phi=learn_rate,
-                                                          opt_steps_dist_par=N_steps_iter,
-                                                          lRate_dist_par=learn_rate,
+                                                          max_opt_iter_phi=N_steps_iter,
+                                                          lr_phi=learn_rate,
+                                                          max_opt_iter_dist_par=N_steps_iter,
+                                                          lr_dist_par=learn_rate,
                                                           print_flag_phi=False,
                                                           print_flag_dist_par=False,
                                                           rel_improv_tol=rel_improv_tol_SS,
                                                           no_improv_max_count=no_improv_max_count_SS,
-                                                          min_n_iter=min_n_iter_SS, bandwidth=bandwidth_SS,
+                                                          min_opt_iter=min_opt_iter_SS, bandwidth=bandwidth_SS,
                                                           small_grad_th=1e-6)
 
                 if not(type(SAVE_FOLD) == list):
@@ -1202,15 +1202,15 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                                                           est_const_dist_par=True, dim_dist_par_un=model.dim_dist_par_un,
                                                           est_const_beta=True, 
                                                           opt_large_steps=N_steps//N_steps_iter,
-                                                          opt_steps_phi=N_steps_iter, lRate_phi=learn_rate,
-                                                          opt_steps_dist_par=N_steps_iter, lRate_dist_par=learn_rate,
-                                                          opt_steps_beta=N_steps_iter, lRate_beta=learn_rate,
+                                                          max_opt_iter_phi=N_steps_iter, lr_phi=learn_rate,
+                                                          max_opt_iter_dist_par=N_steps_iter, lr_dist_par=learn_rate,
+                                                          max_opt_iter_beta=N_steps_iter, lr_beta=learn_rate,
                                                           print_flag_phi=False, print_flag_dist_par=True,
                                                           print_flag_beta=True,
                                                           print_every=print_every,
                                                           rel_improv_tol=rel_improv_tol_SS,
                                                           no_improv_max_count=no_improv_max_count_SS,
-                                                          min_n_iter=min_n_iter_SS, bandwidth=bandwidth_SS,
+                                                          min_opt_iter=min_opt_iter_SS, bandwidth=bandwidth_SS,
                                                           small_grad_th=1e-6)
 
                 file_path = SAVE_FOLD + '/dirSpW1_X0_SS_est_lr_' + \
@@ -1261,8 +1261,8 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                 dist_par_un_0 = dist_par_un_ss
 
                 W_est, B_est, A_est, dist_par_un_est, sd_par_0, diag = model.estimate_SD(Y_T, B0=B0, A0=A0, W0=W0,
-                                                                            opt_steps=N_steps,
-                                                                            lRate=learn_rate,
+                                                                            max_opt_iter=N_steps,
+                                                                            lr=learn_rate,
                                                                             dist_par_un=dist_par_un_0,
                                                                             sd_par_0 = phi_ss_est_T[:, :5].mean(dim=1),
                                                                             dim_dist_par_un=dim_dist_par_un,
@@ -1270,7 +1270,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                                                                             print_flag=True, print_every=print_every,
                                                                          rel_improv_tol=rel_improv_tol_SD,
                                                                          no_improv_max_count=no_improv_max_count_SD,
-                                                                         min_n_iter=min_n_iter_SD,
+                                                                         min_opt_iter=min_opt_iter_SD,
                                                                          bandwidth=bandwidth_SD,
                                                                          small_grad_th=1e-6)
 
@@ -1345,8 +1345,8 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
 
                 W_est, B_est, A_est, dist_par_un_est, beta_est, sd_par_0, diag = model.estimate_SD_X0(Y_T, X_T, B0=B0,
                                                                                 A0=A0, W0=W0,
-                                                                                opt_steps=N_steps,
-                                                                                lRate=learn_rate,
+                                                                                max_opt_iter=N_steps,
+                                                                                lr=learn_rate,
                                                                                 est_dis_par_un=True,
                                                                                 dist_par_un=dist_par_un_0,
                                                                                 sd_par_0=sd_par_0,
@@ -1359,7 +1359,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                                                                                 print_every=print_every,
                                                                           rel_improv_tol=rel_improv_tol_SD,
                                                                           no_improv_max_count=no_improv_max_count_SD,
-                                                                          min_n_iter=min_n_iter_SD,
+                                                                          min_opt_iter=min_opt_iter_SD,
                                                                           bandwidth=bandwidth_SD,
                                                                           small_grad_th=1e-6)
 

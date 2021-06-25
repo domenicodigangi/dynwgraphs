@@ -71,7 +71,7 @@ theta_T, A_T = model.sd_dgp_bin(w, B, A, T, beta=beta, X_T=X_T)
 #%%
 W_est, B_est, A_est, beta_est, diag = model.estimate(A_T, X_T, B0=B0, A0=A0, W0=W0,
                                                      dim_beta=dim_beta, Steps=3,
-                                                     lRate=learn_rate)
+                                                     lr=learn_rate)
 
 
 

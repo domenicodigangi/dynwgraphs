@@ -221,7 +221,7 @@ class dirBin2_dynNet_SD(dirBin2_staNet):
         return logl_T
 
 
-    def estimate_SD(self, Y_T, opt_n=1, opt_steps=800, lRate=0.005, plot_flag=False, print_flag=False,
+    def estimate_SD(self, Y_T, opt_n=1, max_opt_iter=800, lr=0.005, plot_flag=False, print_flag=False,
                     B0=None, A0=None, W0=None, print_every=200):
 
         if B0 is None:
@@ -237,7 +237,7 @@ class dirBin2_dynNet_SD(dirBin2_staNet):
             reBA = self.un2re_BA_par(unPar[1:])
             return - self.loglike_sd_filt(unPar[:1], reBA[:1], reBA[1:], Y_T,)
 
-        unPar_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
+        unPar_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
                                       plot_flag=plot_flag, print_flag=print_flag, print_every=print_every,
                                         rel_improv_tol = 1e-6, no_improv_max_count=20)
 

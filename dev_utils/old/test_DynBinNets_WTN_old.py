@@ -56,7 +56,7 @@ theta_ss_t, diag_iter =  model.estimate_ss_bin_t_MLE(A_t, print_flag=True)
 #%% test single snapshot filter
 # can take a long time
 model = dirBin1_dynNet_SD()
-theta_ss_est_T, diag_ss_T = model.ss_filt_bin(A_T, opt_steps=50, lRate=0.5, print_flag=True, mle_only=True)
+theta_ss_est_T, diag_ss_T = model.ss_filt_bin(A_T, max_opt_iter=50, lr=0.5, print_flag=True, mle_only=True)
 
 #%% test estimate pf thetas given delta
 # can take a long time
@@ -64,7 +64,7 @@ dim_delta = 1
 delta = torch.ones(dim_delta)
 model = dirBin1_X0_dynNet_SD()
 theta_ss_reg_t, diag_ss_T = model.estimate_ss_bin_t(A_t, X_t=X_t, delta=delta,
-                                                        opt_steps=500, lRate=0.5, print_flag=True)
+                                                        max_opt_iter=500, lr=0.5, print_flag=True)
 
 
 # check that parameters est without reg are not as good
@@ -72,7 +72,7 @@ degIO = strIO_from_mat(A_t)
 torch.mean(model.check_fitBin(theta_ss_reg_t, degIO,  X_t=X_t, delta=delta))
 torch.mean(model.check_fitBin(theta_ss_t, degIO,  X_t=X_t, delta=delta))
 
-theta_ss_est_T, diag_ss_T = model.ss_filt_bin(A_T[:,:,:3], opt_steps=250, lRate=0.5, print_flag=True, mle_only=True)
+theta_ss_est_T, diag_ss_T = model.ss_filt_bin(A_T[:,:,:3], max_opt_iter=250, lr=0.5, print_flag=True, mle_only=True)
 
 
 #%%test score driven version
@@ -82,7 +82,7 @@ wI, wO = 1 + torch.randn(N), torch.randn(N)
 w = torch.cat((torch.ones(N) * wI, torch.ones(N) * wO)) * 0.001
 dim_delta=N
 delta = torch.zeros(dim_delta)
-W_est, B_est, A_est, delta_est, diag = model.estimateBin_SD(A_T, X_T, dim_delta=dim_delta, Steps=2, lRate=0.05)
+W_est, B_est, A_est, delta_est, diag = model.estimateBin_SD(A_T, X_T, dim_delta=dim_delta, Steps=2, lr=0.05)
 
 #%%
 

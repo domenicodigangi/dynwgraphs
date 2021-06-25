@@ -36,7 +36,7 @@ class dirBin1_staNet(dirSpW1_staNet):
     def dist_par_un_start_val(self, dim_dist_par_un=1):
         return None
 
-    def estimate_dist_par_const_given_phi_T(self, Y_T, phi_T, dim_dist_par_un, X_T=None, beta=None, dist_par_un_0=None, like_type=2, min_n_iter=200, opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10):
+    def estimate_dist_par_const_given_phi_T(self, Y_T, phi_T, dim_dist_par_un, X_T=None, beta=None, dist_par_un_0=None, like_type=2, min_opt_iter=200, max_opt_iter=5000, opt_n=1, lr=0.01, print_flag=True, plot_flag=False, print_every=10):
         return None, 0
    
     def invPiMat(self, phi, beta=None, X_t=None, ret_log=False):
@@ -180,8 +180,8 @@ class dirBin1_staNet(dirSpW1_staNet):
             out = torch.sum(log_probs)
         return out.clone()
 
-    def estimate_ss_t_bin_from_degIO(self, degIO, min_n_iter=200,
-                                    opt_steps=5000, opt_n=1, lRate=0.01,
+    def estimate_ss_t_bin_from_degIO(self, degIO, min_opt_iter=200,
+                                    max_opt_iter=5000, opt_n=1, lr=0.01,
                                     print_flag=True, plot_flag=False, print_every=10):
         """
         single snapshot Maximum logLikelihood estimate of phi_t for binary networks using only the degrees - does no work with regressors
@@ -192,8 +192,8 @@ class dirBin1_staNet(dirSpW1_staNet):
 
         unPar_0 = self.start_phi_from_obs(None, degIO=degIO)
 
-        all_par_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                        min_n_iter=min_n_iter,
+        all_par_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
+                                        min_opt_iter=min_opt_iter,
                                         plot_flag=plot_flag, print_flag=print_flag, print_every=print_every)
 
         #Identify the phi_t part
@@ -201,7 +201,7 @@ class dirBin1_staNet(dirSpW1_staNet):
         return all_par_est, diag
 
 
-    def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dist_par_un,  beta_0=None, like_type=0, opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10, rel_improv_tol=5 * 1e-7, no_improv_max_count=30, min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
+    def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dist_par_un,  beta_0=None, like_type=0, max_opt_iter=5000, opt_n=1, lr=0.01, print_flag=True, plot_flag=False, print_every=10, rel_improv_tol=5 * 1e-7, no_improv_max_count=30, min_opt_iter=150, bandwidth=50, small_grad_th=1e-6):
             """single snapshot Maximum logLikelihood estimate given beta_t"""
             T = Y_T.shape[2]
             n_reg = X_T.shape[2]
@@ -220,20 +220,20 @@ class dirBin1_staNet(dirSpW1_staNet):
                                                     like_type=like_type)
                 return - logl_T.sum()
 
-            beta_t_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
+            beta_t_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
                                        plot_flag=plot_flag, print_flag=print_flag, print_every=print_every,
                                         rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-                                        min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
+                                        min_opt_iter=min_opt_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
 
 
             return beta_t_est, diag
 
     def ss_filt_est_beta_const(self, Y_T, X_T=None, beta=None, phi_T=None, like_type=2,
-                                        est_const_beta=False, opt_large_steps=10, opt_n=1, opt_steps_phi=500, lRate_phi=0.01,
-                                        opt_steps_beta=400, lRate_beta=0.01,
+                                        est_const_beta=False, opt_large_steps=10, opt_n=1, max_opt_iter_phi=500, lr_phi=0.01,
+                                        max_opt_iter_beta=400, lr_beta=0.01,
                                         print_flag_phi=False, print_flag_beta=False,
                                        rel_improv_tol=5 * 1e-7, no_improv_max_count=30,
-                                       min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
+                                       min_opt_iter=150, bandwidth=50, small_grad_th=1e-6):
         """
         use ss filt for za weighted version class without estimating dist_par
         """
@@ -242,12 +242,12 @@ class dirBin1_staNet(dirSpW1_staNet):
                                                    est_const_dist_par=False, dim_dist_par_un=torch.ones(1),
                                                    est_const_beta=est_const_beta,
                                                    opt_large_steps=opt_large_steps, opt_n=opt_n,
-                                                   opt_steps_phi=opt_steps_phi, lRate_phi=lRate_phi,
-                                                   opt_steps_dist_par=0, lRate_dist_par=0,
-                                                   opt_steps_beta=opt_steps_beta, lRate_beta=lRate_beta,
+                                                   max_opt_iter_phi=max_opt_iter_phi, lr_phi=lr_phi,
+                                                   max_opt_iter_dist_par=0, lr_dist_par=0,
+                                                   max_opt_iter_beta=max_opt_iter_beta, lr_beta=lr_beta,
                                                    print_flag_phi=print_flag_phi, print_flag_dist_par=False,
                                                    print_flag_beta=print_flag_beta,
-                                                   min_n_iter=min_n_iter,
+                                                   min_opt_iter=min_opt_iter,
                                                    rel_improv_tol=rel_improv_tol,
                                                    no_improv_max_count=no_improv_max_count,
                                                     bandwidth=bandwidth,
@@ -287,8 +287,8 @@ class dirBin1_staNet(dirSpW1_staNet):
         tmp1 = tmp * (degMax / tmp[-1])
         deg_io = torch.cat((tmp1, tmp1))
         deg_io[deg_io < degMin] = degMin
-        um_phi, diag = self.estimate_ss_t_bin_from_degIO(deg_io, min_n_iter=500,
-                                                         opt_steps=5000, opt_n=1, lRate=0.01,
+        um_phi, diag = self.estimate_ss_t_bin_from_degIO(deg_io, min_opt_iter=500,
+                                                         max_opt_iter=5000, opt_n=1, lr=0.01,
                                                          print_flag=False, plot_flag=False, print_every=100)
 
         expDegs = strIO_from_mat(self.exp_A(um_phi))
@@ -531,11 +531,11 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
         phi_T_0[:, t] = model.start_phi_form_obs(Y_T[:, :, t])
 
     rel_improv_tol_SS = 1e-6
-    min_n_iter_SS = 20
-    bandwidth_SS = min_n_iter_SS
+    min_opt_iter_SS = 20
+    bandwidth_SS = min_opt_iter_SS
     no_improv_max_count_SS = 20
     rel_improv_tol_SD = 1e-7
-    min_n_iter_SD = 750
+    min_opt_iter_SD = 750
     bandwidth_SD = 250
     no_improv_max_count_SD = 50
 
@@ -547,11 +547,11 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
         if not regr_flag:
             phi_ss_est_T, diag = model.ss_filt(Y_T, phi_T_0=phi_T_0,
                                                est_dist_par=False, est_beta=False,
-                                               opt_steps=N_steps, lRate=learn_rate, print_flag=True,
+                                               max_opt_iter=N_steps, lr=learn_rate, print_flag=True,
                                                print_every=print_every,
                                                rel_improv_tol=rel_improv_tol_SS,
                                                no_improv_max_count=no_improv_max_count_SS,
-                                               min_n_iter=min_n_iter_SS, bandwidth=bandwidth_SS,
+                                               min_opt_iter=min_opt_iter_SS, bandwidth=bandwidth_SS,
                                                small_grad_th=1e-6)
 
             file_path = SAVE_FOLD + '/dirBin1_SS_est_lr_' + \
@@ -580,15 +580,15 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
                                              phi_T=phi_ss_est_T_0,
                                              est_const_beta=True,
                                              opt_large_steps=N_steps // N_steps_iter,
-                                             opt_steps_phi=N_steps_iter,
-                                             lRate_phi=learn_rate,
-                                             opt_steps_beta=N_steps_iter,
-                                             lRate_beta=learn_rate_beta,
+                                             max_opt_iter_phi=N_steps_iter,
+                                             lr_phi=learn_rate,
+                                             max_opt_iter_beta=N_steps_iter,
+                                             lr_beta=learn_rate_beta,
                                              print_flag_phi=False,
                                              print_flag_beta=True,
                                              rel_improv_tol=rel_improv_tol_SS,
                                              no_improv_max_count=no_improv_max_count_SS,
-                                             min_n_iter=min_n_iter_SS, bandwidth=bandwidth_SS,
+                                             min_opt_iter=min_opt_iter_SS, bandwidth=bandwidth_SS,
                                              small_grad_th=1e-6)
 
             file_path = SAVE_FOLD + '/dirBin1_X0_SS_est_lr_phi' + \
@@ -619,7 +619,7 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
         A0 = torch.ones(2*N_BA) * 0.01
         W0 = phi_ss_est_T_0.mean(dim=1) * (1 - B0)
         if not regr_flag:
-            W_est, B_est, A_est, dist_par_un_est, sd_par_0, diag = model.estimate_SD(Y_T, B0=B0, A0=A0, W0=W0, opt_steps=N_steps, lRate=learn_rate, sd_par_0=phi_ss_est_T_0[:, :5].mean(dim=1), print_flag=True, print_every=print_every, plot_flag=False, est_dis_par_un=False, init_filt_um=False, rel_improv_tol=rel_improv_tol_SD, no_improv_max_count=no_improv_max_count_SD, min_n_iter=min_n_iter_SD, bandwidth=bandwidth_SD, small_grad_th=1e-6)
+            W_est, B_est, A_est, dist_par_un_est, sd_par_0, diag = model.estimate_SD(Y_T, B0=B0, A0=A0, W0=W0, max_opt_iter=N_steps, lr=learn_rate, sd_par_0=phi_ss_est_T_0[:, :5].mean(dim=1), print_flag=True, print_every=print_every, plot_flag=False, est_dis_par_un=False, init_filt_um=False, rel_improv_tol=rel_improv_tol_SD, no_improv_max_count=no_improv_max_count_SD, min_opt_iter=min_opt_iter_SD, bandwidth=bandwidth_SD, small_grad_th=1e-6)
 
             file_path = SAVE_FOLD + '/dirBin1_SD_est_lr_' + \
                         str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + 'T_test_' + str(T_test) + \
@@ -640,15 +640,15 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
                                      A0=torch.cat((A0, torch.zeros(n_beta_tv))),
                                      W0=torch.cat((W0, torch.zeros(n_beta_tv))),
                                      beta_const_0=torch.randn(self.dim_beta, n_reg - n_beta_tv)*0.01,
-                                     opt_steps=N_steps,
-                                     lRate=learn_rate,
+                                     max_opt_iter=N_steps,
+                                     lr=learn_rate,
                                      sd_par_0=phi_ss_est_T_0[:, :5].mean(dim=1),
                                      print_flag=True,
                                      print_every=print_every,
                                      plot_flag=False,
                                      rel_improv_tol=rel_improv_tol_SD,
                                      no_improv_max_count=no_improv_max_count_SD,
-                                     min_n_iter=min_n_iter_SD,
+                                     min_opt_iter=min_opt_iter_SD,
                                      bandwidth=bandwidth_SD,
                                      small_grad_th=1e-6)
 

@@ -15,6 +15,7 @@ Author: Domenico Di Gangi
 
 
 """
+from dynwgraphs import hypergrad
 import torch
 import sys
 import numpy as np
@@ -65,6 +66,9 @@ class dirSpW1_funs(nn.Module):
         elif beta.shape[0] == N:
             # one parameter for each node for each regressor
             prod = torch.mul(beta * beta.unsqueeze(1), X_t)
+        elif beta.shape[0] == 2*N:
+            raise
+
         return prod.sum(dim=2)
 
     def cond_exp_Y(self, phi, beta, X_t, ret_log=False, ret_all=False):
@@ -75,7 +79,7 @@ class dirSpW1_funs(nn.Module):
         """
         phi_i, phi_o = splitVec(phi)
         log_Econd_mat = phi_i + phi_o.unsqueeze(1)
-        if X_t is not None:
+        if self.check_regressors(X_t, beta):
             log_Econd_mat = log_Econd_mat + self.regr_product(beta, X_t)
 
         if self.ovflw_lm:
@@ -131,15 +135,6 @@ class dirSpW1_funs(nn.Module):
 
         return self.identify(phi_t_0)
 
-    def start_phi_from_obs_T(self, Y_T):
-        N = Y_T.shape[0]
-        T = Y_T.shape[2]
-        phi_T = torch.zeros(2*N, T)
-        for t in range(T):
-            Y_t = Y_T[:, :, t]
-            phi_T[:, t] = self.start_phi_from_obs(Y_t)
-        return phi_T
-
     def dist_from_pars(self, phi, beta, X_t, dist_par_un, A_t=None):
         """
         return a pytorch distribution. it can be matrix valued (if no A_t is given) or vector valued
@@ -181,7 +176,7 @@ class dirSpW1_funs(nn.Module):
         if (self.distr == 'gamma') and (self.like_type in [0, 1]):# if non torch computation of the likelihood is required
             # Restrict the distribution parameters.
             dist_par_re = self.link_dist_par(dist_par_un, N, A_t)
-            if like_type==0:
+            if self.like_type==0:
                 """ numerically stable version """
                 log_EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t, ret_log=True)
                 # divide the computation of the loglikelihood in 4 pieces
@@ -191,7 +186,7 @@ class dirSpW1_funs(nn.Module):
                 #tmp3 = - torch.sum(torch.div(Y_t[A_t], torch.exp(log_EYcond_mat[A_t])))
                 tmp3 = - torch.sum(torch.exp(torch.log(Y_t[A_t])-log_EYcond_mat[A_t] + dist_par_re.log() ))
                 out = tmp + tmp1 + tmp2 + tmp3
-            elif like_type == 1:
+            elif self.like_type == 1:
                 EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t)
                 # divide the computation of the loglikelihood in 4 pieces
                 tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
@@ -290,328 +285,183 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
     Single snapshot sequence
     """
 
-    def __init__(self, Y_T, X_T=None, phi_tv=True, ovflw_lm=True, distr='gamma',  dim_dist_par_un = 1, dist_par_tv=False, dim_beta = 1, beta_tv=False):
+    def __init__(self, Y_T, X_T=None, phi_tv=True, ovflw_lm=True, distr='gamma',  dim_dist_par_un = 1, dist_par_tv=False, dim_beta = 1, beta_tv=False, run_prefix="", 
+    opt_options_ss_t = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}, 
+    opt_options_ss_seq = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}):
+
         super(dirSpW1_sequence_ss, self).__init__( ovflw_lm, distr,  dim_dist_par_un, dim_beta)
         
         self.ovflw_lm = ovflw_lm
         self.Y_T = Y_T
+        self.X_T = X_T
         self.N = Y_T.shape[0]
         self.T = Y_T.shape[2]
         self.distr = distr
         self.dim_dist_par_un = dim_dist_par_un
         self.dim_beta = dim_beta
+        self.phi_tv = phi_tv
+        self.dist_par_tv = dist_par_tv
+        self.beta_tv = beta_tv
+
+        self.opt_options_ss_t = opt_options_ss_t
+        self.opt_options_ss_seq = opt_options_ss_seq
         
-        if not phi_tv:
+        self.run_prefix = run_prefix
+        
+        if not self.phi_tv:
+            self.phi_T = nn.ParameterList([nn.Parameter(torch.zeros(self.N*2))])
             raise
         else:
-            self.phi_i_T = nn.Parameter(torch.zeros(self.N,self.T))
-            self.phi_o_T = nn.Parameter(torch.zeros(self.N,self.T))
+            self.phi_T = nn.ParameterList([nn.Parameter(torch.zeros(self.N*2)) for t in range(self.T)])
 
-        if dist_par_tv:
-            raise
+        if self.dist_par_tv:
+            self.dist_par_un_T = nn.ParameterList([nn.Parameter(torch.zeros(dim_dist_par_un)) for t in range(self.T)])
         else:
-            self.dist_par_un = nn.Parameter(torch.zeros(dim_dist_par_un))
-
-        if dim_beta is not None:
+            self.dist_par_un_T = nn.ParameterList([nn.Parameter(torch.zeros(dim_dist_par_un))])
+            
+        if X_T is None:
+            self.beta_T = None
             if beta_tv:
-                self.beta = nn.Parameter(torch.zeros(dim_beta, T))
                 raise
-            else:
-                self.beta = nn.Parameter(torch.zeros(dim_beta))
         else:
-            self.beta = None
+            if self.beta_tv:
+                self.beta_T = nn.ParameterList([nn.Parameter(torch.zeros(dim_beta)) for t in range(self.T)])
+            else:
+                self.beta_T = nn.ParameterList([nn.Parameter(torch.zeros(dim_beta))])
 
-        self.funs = dirSpW1_funs(ovflw_lm=self.ovflw_lm, distr=self.distr,  dim_dist_par_un=self.dim_dist_par_un, dim_beta=self.dim_beta)
 
     def get_obs_t(self, t):
         Y_t = self.Y_T[:, :, t]
         if self.X_T is not None:
-            X_t = X_T[:, :, :, t]
+            X_t = self.X_T[:, :, :, t]
         else:
             X_t = None
         return Y_t, X_t
 
-    def estimate_ss_t(self, t, beta_0=None, phi_0=None, dist_par_un_t=None, like_type=2, est_dist_par=False, est_beta=False, min_n_iter=200, opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True,  plot_flag=False, print_every=10):
+    def get_par_t(self, t):
+        phi_t = self.phi_T[t]
+        if self.dist_par_un_T is not None:
+            if self.dist_par_tv:
+                dist_par_un_t = self.dist_par_un_T[t]
+            elif len(self.dist_par_un_T) == 1:
+                dist_par_un_t = self.dist_par_un_T[0]
+            else:
+                raise
+
+        if self.beta_T is not None:
+            if len(self.beta_T) == self.T:
+                beta_t = self.beta_T[t]
+            elif len(self.beta_T) == 1:
+                beta_t = self.beta_T[0]
+            else:
+                raise
+        else:
+            beta_t = None
+
+        return phi_t, dist_par_un_t, beta_t
+    
+    def set_par_t(self, t, par_list):
+        
+        phi_t, dist_par_un_t, beta_t = par_list
+        self.phi_T[t] = phi_t
+        if self.dist_par_un is not None:
+            if self.dist_par_tv:
+                self.dist_par_un_T[t] = dist_par_un_t
+            elif len(self.dist_par_un_T) == 1:
+                self.dist_par_un_T[0] = dist_par_un_t
+            else:
+                raise
+
+        if self.beta_T is not None:
+            if self.beta_tv:
+                self.beta_T[t] = beta_t 
+            elif len(self.beta_T) == 1:
+                self.beta_T[0] = beta_t
+            else:
+                raise
+ 
+    def set_all_requires_grad(self, flag):
+        for p in self.parameters():
+            p.requires_grad = flag
+            
+    def set_requires_grad_t(self, par_list, t, flag):
+        if par_list is None:
+            raise
+        elif len(par_list) == 1 :
+            par_list[0].requires_grad = flag
+        elif len(par_list) == self.T :
+            par_list[t].requires_grad = flag
+        else:
+            raise
+
+    def estimate_ss_t(self, t, est_phi, est_dist_par, est_beta, tb_log_flag=False):
         """
-        single snapshot Maximum logLikelihood estimate of phi_t and, if not given as input, also of dist_par_un_t and beta_t
+        single snapshot Maximum logLikelihood estimate of phi_t, dist_par_un_t and beta_t
         """
 
         Y_t, X_t = self.get_obs_t(t)
+        
+        self.set_all_requires_grad(False)
 
-        # Define starting values, if an inut is given but the parameter has to be estimated use input as starting value
-        # starting value for phi_t
-        if phi_0 is None:
-            phi_0 = self.start_phi_from_obs(Y_t)
-        unPar_0 = phi_0#.clone().detach()
-        # if no value for dist_par is provided, set a starting value and estimate it
-        if est_dist_par:
-            N_dis_par = self.dim_dist_par_un
-            # if given use input as starting point
-            if dist_par_un_t is None:
-                dist_par_un_0 = self.dist_par_un_start_val()
-            else:
-                dist_par_un_0 = dist_par_un_t#.clone().detach()
-            unPar_0 = torch.cat((unPar_0, dist_par_un_0))
+        if est_phi:
+            self.set_requires_grad_t(self.phi_T, t, True)
         if est_beta:
-            #if given use beta_t as starting point else start at zero
-            if beta_0 is None:
-                n_reg = X_t.shape[2]
-                beta_0 = torch.randn(self.dim_beta, n_reg)*0.01
-            else:
-                beta_0 = beta_t#.clone().detach()
-            self.check_regressors(X_t, beta_t)
-            unPar_0 = torch.cat((unPar_0, beta_0.view(-1)))
-
-        if (not est_beta) and (not est_dist_par):  # estimate only phi_t
-            def obj_fun(unPar):
-                return - self.loglike_t(Y_t, unPar, X_t=X_t, beta=beta_t, dist_par_un=dist_par_un_t, like_type=like_type)
-
-            all_par_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                            min_n_iter=min_n_iter,
-                                            plot_flag=plot_flag, print_flag=print_flag, print_every=print_every)
-
-        elif (not est_beta) and (est_dist_par): # estimate  phi_t and dist_par
-            def obj_fun(unPar):
-                return - self.loglike_t(Y_t, unPar[:2*N], X_t=X_t, beta=beta_t, dist_par_un=unPar[2*N:],
-                                          like_type=like_type)
-
-            all_par_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                            min_n_iter=min_n_iter,
-                                            plot_flag=plot_flag, print_flag=print_flag, print_every=print_every)
-
-        elif (est_beta) and (not est_dist_par): # estimate phi_t dist_par and and beta
-            def obj_fun(unPar):
-                return - self.loglike_t(Y_t, unPar[:2*N], X_t=X_t,
-                                          beta=unPar[2*N:].view(self.dim_beta, n_reg),
-                                          dist_par_un=None,
-                                          like_type=like_type)
-
-            all_par_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                            min_n_iter=min_n_iter,
-                                            plot_flag=plot_flag, print_flag=print_flag, print_every=print_every)
-
-        elif (est_beta) and (est_dist_par): # estimate phi_t dist_par and and beta
-            def obj_fun(unPar):
-                return - self.loglike_t(Y_t, unPar[:2*N], X_t=X_t,
-                                          beta=unPar[2*N + N_dis_par:].view(self.dim_beta, n_reg),
-                                          dist_par_un=unPar[2*N:2*N + N_dis_par],
-                                          like_type=like_type)
-
-            all_par_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                            min_n_iter=min_n_iter,
-                                            plot_flag=plot_flag, print_flag=print_flag, print_every=print_every)
-
-        #Identify the phi_t part
-        all_par_est[:2*N] = self.identify(all_par_est[:2*N])
-
-        return all_par_est, diag
-
-    def ss_filt(self, Y_T, X_T=None, beta_T=None, phi_T_0=None, dist_par_un=None, like_type=2,
-                est_dist_par=False, est_beta=False,
-                opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False, print_every=10,
-                rel_improv_tol=5*1e-7, no_improv_max_count=30,
-                min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
-
-        """
-        Single snapsot sequence filter.
-        return the sequence  of single snapshot estimates of phi and if required also of dist_par and beta
-        """
-        T = Y_T.shape[2]
-        N = Y_T.shape[0]
-        #always estimate phi_T
-        all_par_est_T = torch.zeros(2 * N, T)
-
+            self.set_requires_grad_t(self.beta_T, t, True)
         if est_dist_par:
-            all_par_est_T = torch.cat((all_par_est_T, torch.zeros(self.dim_dist_par_un, T) ), dim=1)
-        if est_beta:
-            n_reg = X_T.shape[2]
-            all_par_est_T = torch.cat((all_par_est_T, torch.zeros(self.dim_beta*n_reg, T)), dim=1)
+            self.set_requires_grad_t(self.dist_par_un_T, t, True)
 
-        diag_T = []
-        X_t = None
-        for t in range(T):
-            # estimate each phi_t given dist_par_un
-            Y_t = Y_T[:, :, t]
+        
+        def obj_fun():
+            phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
+            return - self.loglike_t(Y_t, phi_t, X_t=X_t, beta=beta_t, dist_par_un=dist_par_un_t)
 
-            if phi_T_0 is None:
-                phi_t_0 = None
-            else:
-                phi_t_0 = phi_T_0[:, t]
+        par_to_opt = filter(lambda p: p.requires_grad, self.parameters())
 
-            if self.check_regressors(X_T, beta_T):
-                X_t = X_T[:, :, :, t]
+        run_name = f"{self.run_prefix}_SingleSnap_t"
 
-            all_par_t, diag_t = self.estimate_ss_t(Y_t,
-                                                     phi_0=phi_t_0,
-                                                     est_dist_par=est_dist_par,
-                                                     dist_par_un_t=dist_par_un,
-                                                     est_beta=est_beta,
-                                                    beta_t=beta, X_t=X_t,
-                                                     opt_steps=opt_steps,
-                                                     like_type=like_type,
-                                                     lRate=lRate, opt_n=opt_n,
-                                                     print_flag=print_flag, plot_flag=plot_flag,
-                                                     print_every=print_every, min_n_iter=min_n_iter)
+        hparams_dict = {"est_phi" :est_phi, "est_dist_par" :est_dist_par, "_est_beta" :_est_beta}
 
-            all_par_est_T[:, t] = all_par_t
-            diag_T.append(diag_t)
-            # print(all_par_t.mean())
-            # print(t)
-        return all_par_est_T, diag_T
+        optim_torch(obj_fun, list(par_to_opt), max_opt_iter=self.opt_options_ss_t["max_opt_iter"], opt_n=self.opt_options_ss_t["opt_n"], lr=self.opt_options_ss_t["lr"], min_opt_iter=self.opt_options_ss_t["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in=hparams_dict)
 
-    def estimate_dist_par_const_given_phi_T(self, Y_T, phi_T, X_T=None, beta_T=None,
-                                            dist_par_un_0=None, like_type=2,
-                                            opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False,
-                                            print_every=10,
-                                            rel_improv_tol=5*1e-7, no_improv_max_count=30,
-                                            min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
-
-        """single snapshot Maximum logLikelihood estimate given beta_t"""
-
-        N = Y_T.shape[0]
-        T = Y_T.shape[2]
-        if dist_par_un_0 is None:
-            dist_par_un_0 = torch.zeros(self.dim_dist_par_un)
-
-        unPar_0 = dist_par_un_0#.clone().detach()
-
-        # the likelihood for beta_t is the sum of all the single snapshots likelihoods, given phi_T
-        def obj_fun(unPar):
-            logl_T=0
-            X_t=None
-            for t in range(T):
-                if self.check_regressors(X_T, beta_T):
-                    X_t=X_T[:, :, :, t]
-                logl_T = logl_T + self.loglike_t(Y_T[:, :, t], phi_T[:, t], X_t=X_t, beta=beta,
-                                                   dist_par_un=unPar, like_type=like_type)
-            return - logl_T
-
-        dist_par_un_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                            plot_flag=plot_flag, print_flag=print_flag, print_every=print_every,
-                                            print_fun=lambda x: torch.exp(x),
-                                            rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-                                            min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
-
-        return dist_par_un_est, diag
-
-    def estimate_beta_const_given_phi_T(self, Y_T, X_T, phi_T, dist_par_un,  beta_0=None, like_type=2,
-                                        opt_steps=5000, opt_n=1, lRate=0.01, print_flag=True, plot_flag=False,
-                                        print_every=10,
-                                        rel_improv_tol=5*1e-7, no_improv_max_count=30,
-                                        min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
-
-        """single snapshot Maximum logLikelihood estimate given beta_t"""
-
-        T = Y_T.shape[2]
-        n_reg = X_T.shape[2]
-        if beta_0 is None:
-            n_reg = X_T.shape[2]
-            beta_0 = torch.randn(self.dim_beta, n_reg)*0.01
-
-        unPar_0 = beta_0.view(-1).clone().detach()
-
-        # the likelihood for beta_t is the sum of all the single snapshots likelihoods, given phi_T
-        def obj_fun(unPar):
-            logl_T=0
-            for t in range(T):
-                logl_T = logl_T + self.loglike_t(Y_T[:, :, t], phi_T[:, t], X_t=X_T[:, :, :, t],
-                                                   beta=unPar.view(self.dim_beta, n_reg),
-                                                   dist_par_un=dist_par_un, like_type=like_type)
-            return - logl_T
-
-        beta_t_est_flat, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
-                                       plot_flag=plot_flag, print_flag=print_flag, print_every=print_every,
-                                        rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-                                        min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
-
-        beta_t_est = beta_t_est_flat.view(self.dim_beta, n_reg)
-        return beta_t_est, diag
-
-    def ss_filt_est_beta_dist_par_const(self, Y_T, X_T=None, beta=None, phi_T=None, dist_par_un=None, like_type=2,
-                                          est_const_dist_par=False, 
-                                          est_const_beta=False,
-                                          opt_large_steps=10, opt_n=1,   opt_steps_phi=500, lRate_phi=0.01,
-                                          opt_steps_dist_par=500, lRate_dist_par=0.01,
-                                          opt_steps_beta=400, lRate_beta=0.01,
-                                          print_flag_phi=False, print_flag_dist_par=False, print_flag_beta=False,
-                                          print_every=50,
-                                          rel_improv_tol=5*1e-7, no_improv_max_count=30,
-                                          min_n_iter=150, bandwidth=50, small_grad_th=1e-6):
+    def estimate_ss_seq_joint(self, tb_log_flag=True, par_init="fast_mle"):
         """
-        Static sequence filter.
-         return the sequence  of single snapshot estimates for phi and the corresponding estimate for beta_t
-          to avoid one very large optimization alternate:
-            1 estimate of sequences of  phi given beta_t
-            2 estimate of beta_t given phi_T
+        Estimate from sequence of observations a set of parameters that can be time varying or constant. If time varying estimate a different set of parameters for each time step
         """
-        T = Y_T.shape[2]
-        N = Y_T.shape[0]
 
-        # if starting values or input values are not given, define them
-        if dist_par_un is None:
-            dist_par_un = self.dist_par_un_start_val()
-        if beta is None:
-            if self.check_regressors(X_T, beta_T):
-                n_reg = X_T.shape[2]
-                beta = torch.zeros(self.dim_beta, n_reg)
-            else:
-                beta = torch.zeros(1)
-        if phi_T is None:
-            phi_T = self.start_phi_from_obs_T(Y_T)
+        if self.phi_tv:
+            for t in range(self.T):
+                if par_init == "fast_mle":
+                    Y_t, _ = self.get_obs_t(t)
+                    self.phi_T[t] = torch.nn.Parameter(self.start_phi_from_obs(Y_t))
+                elif par_init == "rand":
+                    self.phi_T[t] = torch.rand(self.phi_T[t].shape)
+                elif par_init == "zeros":
+                    self.phi_T[t] = torch.zeros(self.phi_T[t].shape)           
+        else:
+            raise
+        
+        self.set_all_requires_grad(True)
+        
+        def obj_fun():
+            obj_T = 0
+            for t in range(self.T):
+                Y_t, X_t = self.get_obs_t(t)
+                
+                phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
+                
+                obj_T += - self.loglike_t(Y_t, phi_t, X_t=X_t, beta=beta_t, dist_par_un=dist_par_un_t)
 
-        diag = []
-        for n in range(opt_large_steps+1):
-            #print(n)
+            return obj_T
 
-            phi_T, diag_phi_t = self.ss_filt(Y_T, X_T=X_T, beta=beta, phi_T_0=phi_T,
-                                            dist_par_un=dist_par_un,
-                                            like_type=like_type, est_dist_par=False, 
-                                            est_beta=False, 
-                                            opt_steps=opt_steps_phi, opt_n=opt_n,
-                                            lRate=lRate_phi, print_flag=print_flag_phi, print_every=print_every,
-                                            rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-                                            min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
+        par_to_opt = filter(lambda p: p.requires_grad, self.parameters())
+
+        run_name = f"{self.run_prefix}_SequenceSingleSnap"
+
+        hparams_dict = {"phi_tv" :self.phi_tv, "dist_par_tv" :self.dist_par_tv, "beta_tv" :self.beta_tv, "par_init" :par_init}
 
 
-            diag.append(self.like_seq(Y_T, phi_T, dist_par_un_T=dist_par_un, X_T=X_T, beta=beta).item())
-            # print(phi_T)
-            # estimate beta_t given phi_T and dist_par
-            if est_const_beta:
-                beta, diag_beta = self.estimate_beta_const_given_phi_T(Y_T, X_T, phi_T.clone().detach(), 
-                                                                        dist_par_un=dist_par_un.clone().detach(),
-                                                                        beta_0=beta.clone().detach(),
-                                                                        lRate=lRate_beta,     opt_steps=opt_steps_beta,
-                                                                        print_flag=print_flag_beta,
-                                                                        print_every=print_every,
-                                                                        rel_improv_tol=rel_improv_tol,
-                                                                        no_improv_max_count=no_improv_max_count,
-                                                                        min_n_iter=min_n_iter, bandwidth=bandwidth,
-                                                                        small_grad_th=small_grad_th)
+        optim_torch(obj_fun, list(par_to_opt), max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], min_opt_iter=self.opt_options_ss_seq["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = hparams_dict)
 
-                diag.append(self.like_seq(Y_T, phi_T, dist_par_un_T=dist_par_un, X_T=X_T, beta=beta).item())
-
-            # print(beta)
-
-            # estimate dist_par given phi_T and beta_t
-            if est_const_dist_par:
-                dist_par_un, diag_dist_par_un = self.estimate_dist_par_const_given_phi_T(Y_T, phi_T.clone().detach(),
-                                                                            self.dim_dist_par_un,
-                                                                            X_T=X_T, beta=beta.clone().detach(),
-                                                                            dist_par_un_0=dist_par_un,
-                                                                            lRate=lRate_dist_par,
-                                                                            opt_steps=opt_steps_dist_par,
-                                                                            print_flag=print_flag_dist_par,
-                                                                            print_every=print_every,
-                                                                            rel_improv_tol=rel_improv_tol,
-                                                                            no_improv_max_count=no_improv_max_count,
-                                                                            min_n_iter=min_n_iter,
-                                                                            bandwidth=bandwidth,
-                                                                            small_grad_th=small_grad_th)
-
-                diag.append(self.like_seq(Y_T, phi_T, dist_par_un_T=dist_par_un, X_T=X_T, beta=beta).item())
-            # print(dist_par_un)
-
-        return phi_T.clone().detach(), dist_par_un.clone().detach(), beta.clone().detach(), diag
 
 
     def sample_from_dgps(self, N, T, N_sample, p_T=torch.ones(1, 1, 1)*0.1, dgp_type='sin',
@@ -832,8 +682,8 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
 #                 else:
 #                     est_dist_par = True
 #                 par_0, diag = self.estimate_ss_t(Y_0, X_t=X_0, beta_t=None, phi_0=None, dist_par_un_t=None,
-#                                   est_dist_par=est_dist_par, est_beta=est_beta, min_n_iter=250,
-#                                   opt_steps=1500, opt_n=1, lRate=0.01, print_flag=False)
+#                                   est_dist_par=est_dist_par, est_beta=est_beta, min_opt_iter=250,
+#                                   max_opt_iter=1500, opt_n=1, lr=0.01, print_flag=False)
 
 #                 phi_0 = par_0[:2*N]
 
@@ -1009,11 +859,11 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
 #             raise Exception("seq must be used as a dgp or as a filter")
 #         return p_t.unsqueeze(2).repeat(1, 1, T)
 
-#     def estimate_SD(self, Y_T, opt_n=1, opt_steps=800, lRate=0.005, plot_flag=False, print_flag=False,
+#     def estimate_SD(self, Y_T, opt_n=1, max_opt_iter=800, lr=0.005, plot_flag=False, print_flag=False,
 #                     B0=None, A0=None, W0=None, dist_par_un=None, est_dis_par_un=False,
 #                     sd_par_0=None, init_filt_um=False,
 #                     print_every=200, rel_improv_tol=1e-8, no_improv_max_count=30,
-#                                       min_n_iter=750, bandwidth=250, small_grad_th=1e-6):
+#                                       min_opt_iter=750, bandwidth=250, small_grad_th=1e-6):
 
 #         N = Y_T.shape[0]
 #         if dist_par_un is None:
@@ -1051,10 +901,10 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
 #                 return - self.loglike_sd_filt(unPar[:n], reBA[:n_B], reBA[n_B:n_B + n_A], Y_T,
 #                                                 sd_par_0=sd_par_0, dist_par_un=dist_par_un)
 
-#         unPar_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
+#         unPar_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
 #                                       plot_flag=plot_flag, print_flag=print_flag, print_every=print_every,
 #                                       rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-#                                       min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
+#                                       min_opt_iter=min_opt_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
 
 #         w_est = unPar_est[:n].clone()
 #         re_BA_est = self.un2re_BA_par(unPar_est[n: n + n_B + n_A])
@@ -1067,11 +917,11 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
 
 #     def estimate_SD_X0(self, Y_T, X_T, n_beta_tv=None,
 #                        sd_par_0=None, init_filt_um=False,
-#                         opt_n=1, opt_steps=800, lRate=0.005,
+#                         opt_n=1, max_opt_iter=800, lr=0.005,
 #                         plot_flag=False, print_flag=False, print_every=10,
 #                         B0=None, A0=None, W0=None, beta_const_0=None, est_beta=False,  dist_par_un=None,
 #                        est_dis_par_un=False, rel_improv_tol=1e-8, no_improv_max_count=30,
-#                                       min_n_iter=750, bandwidth=250, small_grad_th=1e-6):
+#                                       min_opt_iter=750, bandwidth=250, small_grad_th=1e-6):
 #         N = Y_T.shape[0]
 #         n_reg = X_T.shape[2]
 #         if n_beta_tv is not None:
@@ -1152,10 +1002,10 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
 #                                             beta_const=unPar[n + 2 * N_BA:].view(self.dim_beta, n_reg_beta_c),
 #                                             X_T=X_T)
 
-#         unPar_est, diag = optim_torch(obj_fun, unPar_0, opt_steps=opt_steps, opt_n=opt_n, lRate=lRate,
+#         unPar_est, diag = optim_torch(obj_fun, unPar_0, max_opt_iter=max_opt_iter, opt_n=opt_n, lr=lr,
 #                                       plot_flag=plot_flag, print_flag=print_flag, print_every=print_every,
 #                                       rel_improv_tol=rel_improv_tol, no_improv_max_count=no_improv_max_count,
-#                                       min_n_iter=min_n_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
+#                                       min_opt_iter=min_opt_iter, bandwidth=bandwidth, small_grad_th=small_grad_th)
 
 #         w_est = unPar_est[:n].clone()
 #         re_BA_est = self.un2re_BA_par(unPar_est[n:n + 2*N_BA])

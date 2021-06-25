@@ -79,4 +79,4 @@ model.loglike_w_t(Y_mat, phi, beta=None, X_t=None, alpha=torch.ones(1), like_typ
 
 W_est, B_est, A_est, beta_est, diag = model.estimate_W(Y_T, X_T, B0=B0, A0=A0, W0=W0,
                                                              dim_beta=dim_beta, Steps=N_steps,
-                                                             lRate=learn_rate)
+                                                             lr=learn_rate)

@@ -59,7 +59,7 @@ for n in range(N_sample):
 
     W_est, B_est, A_est, beta_est, diag = model.estimateBin_SD(Y_T, X_T, B0=B0, A0=A0, W0=W0,
                                                          dim_beta=dim_beta, Steps=N_steps,
-                                                         lRate=learn_rate)
+                                                         lr=learn_rate)
     all_W[:, n] = W_est.detach().numpy()
     all_B[:, n] = B_est.detach().numpy()
     all_A[:, n] = A_est.detach().numpy()
