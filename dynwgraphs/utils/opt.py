@@ -3,6 +3,16 @@
 
 """
 @author: Domenico Di Gangi,  <digangidomenico@gmail.com>
+Created on Sunday June 27th 2021
+
+"""
+
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+@author: Domenico Di Gangi,  <digangidomenico@gmail.com>
 Created on Wednesday June 16th 2021
 
 """
@@ -22,6 +32,9 @@ from pathlib import Path
 
 from ..lbfgsnew import LBFGSNew
 from torch.utils.tensorboard import SummaryWriter
+
+import logging
+logger = logging.getLogger(__name__)
 
 def store_and_print_opt_info(i, last_print_it, max_opt_iter, loss, unPar, rel_improv, grad_norm, lr, diag, print_every,
                              roll_rel_im, no_improv_count, print_par, print_fun=None):
@@ -145,7 +158,7 @@ def grad_norm_from_list(par_list):
         total_norm = torch.norm(torch.stack([torch.linalg.norm(p.grad.detach()).to(device) for p in parameters]), 2.0).item()
     return total_norm
 
-def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=50, min_opt_iter=250, bandwidth=250, small_grad_th=1e-6, folder_name="runs", subfold_name="temp", run_name=None, tb_log_flag=True, hparams_dict_in=None):
+def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=50, min_opt_iter=250, bandwidth=250, small_grad_th=1e-6, folder_name="runs", run_name=None, tb_log_flag=True, hparams_dict_in=None):
     """given a function and a starting vector, run one of different pox optimizations"""
 
 
@@ -173,10 +186,12 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     if hparams_dict_in is not None:
         hparams_dict.update(hparams_dict_in)
 
+    logger.info(f"starting optimization with {''.join([f'{key}:: {value}, ' for key, value in hparams_dict.items()])}")
+
     if tb_log_flag:
         comment = run_name + "".join([f"_{k}_{v}" for k, v in hparams_dict.items()])
 
-        full_name = Path(folder_name) / subfold_name
+        full_name = Path(folder_name) 
 
         writer = SummaryWriter(str(full_name), comment=comment)
 
@@ -184,10 +199,8 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
 
 
     def closure():
-        # if torch.is_grad_enabled():
         optimizer.zero_grad()
         loss = obj_fun_()
-        # if loss.requires_grad:
         loss.backward()
         return loss
 
@@ -233,16 +246,19 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
         else:
             roll_rel_im = rel_im.mean()
 
-        # last_print_it = store_and_print_opt_info(n_iter, last_print_it, max_opt_iter, loss, unPar, rel_improv, grad_norm, lr, diag, print_every, roll_rel_im, no_improv_count, print_par, print_fun=print_fun)
         
         if tb_log_flag:
             writer.add_scalar('Loss/value', loss.item(), n_iter)
             writer.add_scalar('Loss/roll_avg_rel_improv', roll_rel_im, n_iter)
             writer.add_scalar('Loss/roll_avg_rel_improv', grad_norm, n_iter)
 
+        logger.info(f"loss {loss.item()}")
+
+    logger.info(f"final loss {loss.item()}")
     if tb_log_flag:
-        metric_dict = {"final_loss" :loss}
+        metric_dict = {"final_loss" :loss.item()}
         writer.add_hparams(hparams_dict, metric_dict)
+       
         writer.flush()
         writer.close()
 

@@ -77,9 +77,14 @@ def get_test_w_seq(avg_weight = 1e5):
     X_scalar_T = tens(X_T).unsqueeze(1).unsqueeze(1).permute((3,2,1,0))
     X_matrix_T = Y_T[:, :, :-1].log().unsqueeze(2)
     X_matrix_T[~torch.isfinite(X_matrix_T)] = 0
+    Y_T = Y_T[:,:,:-1]
 
+    N = Y_T.shape[0]
+    T = Y_T.shape[2]
+
+    
     X_T_multi = X_matrix_T.repeat_interleave(2, dim=2)
-    X_T_multi[:, :, 1, :] += 1
+    X_T_multi[:, :, 1, :] = torch.range(0, T-1) * torch.ones(N,N).unsqueeze(dim=2)
     return Y_T, X_scalar_T, X_T_multi
 
 
