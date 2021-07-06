@@ -20,6 +20,7 @@ import torch
 import sys
 import numpy as np
 import os
+from matplotlib import pyplot as plt
 from .utils.tensortools import splitVec, tens, putZeroDiag, putZeroDiag_T, soft_lu_bound, strIO_from_mat
 from .utils.opt import optim_torch
 from torch.autograd import grad
@@ -126,13 +127,13 @@ class dirSpW1_funs(nn.Module):
         """
         # set the first in parameter to zero
         phi_i, phi_o = splitVec(phi)
-        if self.phi_id_type == 0:
+        if self.phi_id_type == "first_in_zero":
             """set one to zero"""
             d = phi_i[0]
-        elif self.phi_id_type == 1:
+        elif self.phi_id_type == "in_sum_eq_out_sum":
             """set sum of in parameters equal to sum of out par """
             d = (phi_i.mean() - phi_o.mean())/2
-        elif self.phi_id_type == 2:
+        elif self.phi_id_type == "in_sum_zero":
             """set sum of in parameters to zero """
             d = phi_i.mean()
        
@@ -141,27 +142,33 @@ class dirSpW1_funs(nn.Module):
         return torch.cat((phi_i_out, phi_o_out))
 
     def identify_phi_io_beta(self, phi, beta, x):
-        """ enforce an identification condition on the phi parameters 
+        """ enforce an identification condition on the phi and beta parameters 
         """
         # set the first in parameter to zero
         phi_i, phi_o = splitVec(phi)
-        if self.phi_id_type == 0:
+        if self.phi_id_type != "in_sum_zero":
             raise
         else:
-            d = phi_i.mean()
-            if d != phi_o.mean():
+            if (~ torch.isclose(phi_i.mean(), torch.zeros(1), atol=1e-5)).any() :
                 raise
         
-        # raise error for cases wheer the identification problem is not yet clear
-        if (beta.shape[0] >1 ) | (x.shape[0]>1): 
+        # raise error for cases where the identification problem is not yet clear
+        if beta.shape[0] >1 : 
             raise
-        if beta.dim()>1:
-            if beta.shape[1] >1:
-                raise
+        if self.reg_cross_unique.sum() >1 : 
+            raise
+        if beta.shape[1] >1:
+            raise
 
-        phi_i_out = phi_i - d
-        phi_o_out = phi_o - d
-        beta_out = beta + 2*d/x 
+        d = phi_o.mean()
+        phi_i_out = phi_i
+        if x !=0 :
+            phi_o_out = phi_o - d
+            beta_out = beta + d/x 
+        else:
+            phi_o_out = phi_o
+            beta_out = beta 
+
         return torch.cat((phi_i_out, phi_o_out)), beta_out
 
     def start_phi_from_obs(self, Y_t):
@@ -289,9 +296,9 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
     Single snapshot sequence
     """
 
-    def __init__(self, Y_T, X_T=None, phi_tv=True, phi_par_init="fast_mle", ovflw_lm=True, distr='gamma',  phi_id_type=2, like_type=2,   size_dist_par_un_t = 1, dist_par_tv=False, size_beta_t = 1, beta_tv= tens([False]).bool(), data_name="", 
-    opt_options_ss_t = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}, 
-    opt_options_ss_seq = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}):
+    def __init__(self, Y_T, X_T=None, phi_tv=True, phi_par_init="fast_mle", ovflw_lm=True, distr='gamma',  phi_id_type="in_sum_zero", like_type=2,   size_dist_par_un_t = 1, dist_par_tv=False, size_beta_t = 1, beta_tv= tens([False]).bool(), data_name="", 
+            opt_options_ss_t = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}, 
+            opt_options_ss_seq = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}):
 
         super().__init__( ovflw_lm, distr,  size_dist_par_un_t, size_beta_t, phi_id_type=phi_id_type, like_type=like_type)
         
@@ -339,8 +346,8 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
             else:
                 self.beta_T = nn.ParameterList([nn.Parameter(torch.zeros(size_beta_t, self.n_reg))])
 
-        self.check_regressors_seq_shape()
-       
+        
+           
 
     def get_obs_t(self, t):
         Y_t = self.Y_T[:, :, t]
@@ -350,6 +357,14 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
             X_t = None
         return Y_t, X_t
  
+    def get_phi_T(self):
+        return self.phi_T
+
+    def get_dist_par_un_T(self):
+        return self.dist_par_un_T
+
+    def get_beta_T(self):
+        return self.beta_T
 
     def get_par_t(self, t):
         """
@@ -357,24 +372,24 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
         beta_T can be None, in that case return beta_t = None
         """
         if self.phi_tv:
-            phi_t = self.phi_T[t]
-        elif len(self.phi_T) == 1:
-            phi_t = self.phi_T[0]
+            phi_t = self.get_phi_T()[t]
+        elif len(self.get_phi_T()) == 1:
+            phi_t = self.get_phi_T()[0]
         else:
             raise
 
         if self.dist_par_tv:
-            dist_par_un_t = self.dist_par_un_T[t]
-        elif len(self.dist_par_un_T) == 1:
-            dist_par_un_t = self.dist_par_un_T[0]
+            dist_par_un_t = self.get_dist_par_un_T()[t]
+        elif len(self.get_dist_par_un_T()) == 1:
+            dist_par_un_t = self.get_dist_par_un_T()[0]
         else:
             raise
 
-        if self.beta_T is not None:
-            if len(self.beta_T) == self.T:
-                beta_t = self.beta_T[t]
-            elif len(self.beta_T) == 1:
-                beta_t = self.beta_T[0]
+        if self.get_beta_T() is not None:
+            if len(self.get_beta_T()) == self.T:
+                beta_t = self.get_beta_T()[t]
+            elif len(self.get_beta_T()) == 1:
+                beta_t = self.get_beta_T()[0]
             else:
                 raise
         else:
@@ -382,28 +397,28 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
 
         return phi_t, dist_par_un_t, beta_t
 
-    def get_par_data(self):
-        phi_T_data = torch.stack([p.data for p in self.phi_T], dim=1)
-        if self.beta_T is not None:
-            beta_T_data = torch.stack([p.data for p in self.beta_T], dim=1)
+    def get_seq_latent_par(self):
+        phi_T_data = torch.stack([p.data for p in self.get_phi_T()], dim=1)
+        if self.get_beta_T() is not None:
+            beta_T_data = torch.stack([p.data for p in self.get_beta_T()], dim=1)
         else:
             beta_T_data = None
 
-        dist_par_un_T_data = torch.stack([p.data for p in self.dist_par_un_T], dim=1)
+        dist_par_un_T_data = torch.stack([p.data for p in self.get_dist_par_un_T()], dim=1)
 
         return phi_T_data, beta_T_data, dist_par_un_T_data
 
-    def identify_phi_io_phi_T(self):
+    def identify_sequence(self):
         with torch.no_grad():
             for t in range(self.T):
-                phi_t = self.phi_T[t][:]
+                phi_t = self.get_phi_T()[t][:]
                 phi_t_identified = self.identify_phi_io(phi_t)
                 if self.id_phi_beta_required:
-                    beta_t = self.beta_T[t][:]
-                    x_t = self.X_T[0,0,0,t]
-                    self.identify_phi_io_beta(phi_t_identified, beta_t, x_t )    
+                    beta_t = self.get_beta_T()[t][:, self.reg_cross_unique]
+                    x_t = self.X_T[0, 0, self.reg_cross_unique, t]
+                    self.get_phi_T()[t][:], self.get_beta_T()[t][:, self.reg_cross_unique] = self.identify_phi_io_beta(phi_t_identified, beta_t, x_t )    
                 else:
-                    self.phi_T[t][:] = self.identify_phi_io(phi_t_identified)
+                    self.get_phi_T()[t][:] = self.identify_phi_io(phi_t_identified)
 
 
     def check_regressors_seq_shape(self):
@@ -412,7 +427,7 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
             - X_T is N x N x n_reg x T and 
             - beta_T is size_beta x n_reg x (T or 1) and 
         """
-        if self.check_reg_and_coeff_pres(self.X_T, self.beta_T):
+        if self.check_reg_and_coeff_pres(self.X_T, self.get_beta_T()):
             for t in range(self.T-1):
                 _, X_t = self.get_obs_t(t)
                 _, _, beta_t = self.get_par_t(t)
@@ -424,18 +439,23 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
         return a bool tensor with one entry for each regressor. True if the regressor is uniform across links for more than a few time steps, false otherwise 
         """
         reg_cross_unique = torch.zeros(self.n_reg, dtype=bool)
-        for k in self.n_reg:
+        for k in range(self.n_reg):
             unique_flag_T = [(self.X_T[:,:,k,t].unique().shape[0] == 1) for t in range(self.T)]
             if all(unique_flag_T):
                 reg_cross_unique[k] = True
             elif np.all(unique_flag_T) > 0.1:
                 raise
+        if reg_cross_unique.sum() > 1:
+            raise
         return reg_cross_unique
+
+    def run_checks(self):
+       self.check_regressors_seq_shape()
+
 
     def set_all_requires_grad(self, flag):
         for p in self.parameters():
             p.requires_grad = flag
-            
 
     def set_requires_grad_t(self, par_list, t, flag):
         if par_list is None:
@@ -457,11 +477,11 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
         self.set_all_requires_grad(False)
 
         if est_phi:
-            self.set_requires_grad_t(self.phi_T, t, True)
+            self.set_requires_grad_t(self.get_phi_T(), t, True)
         if est_beta:
-            self.set_requires_grad_t(self.beta_T, t, True)
+            self.set_requires_grad_t(self.get_beta_T(), t, True)
         if est_dist_par:
-            self.set_requires_grad_t(self.dist_par_un_T, t, True)
+            self.set_requires_grad_t(self.get_dist_par_un_T(), t, True)
 
         
         def obj_fun():
@@ -493,20 +513,29 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
             for t in range(self.T):
                 if self.phi_par_init == "fast_mle":
                     Y_t, _ = self.get_obs_t(t)
-                    self.phi_T[t] = torch.nn.Parameter(self.start_phi_from_obs(Y_t))
+                    self.get_phi_T()[t] = torch.nn.Parameter(self.start_phi_from_obs(Y_t))
                 elif self.phi_par_init == "rand":
-                    self.phi_T[t] = torch.rand(self.phi_T[t].shape)
+                    self.get_phi_T()[t] = torch.rand(self.get_phi_T()[t].shape)
                 elif self.phi_par_init == "zeros":
-                    self.phi_T[t] = torch.zeros(self.phi_T[t].shape)           
+                    self.get_phi_T()[t] = torch.zeros(self.get_phi_T()[t].shape)           
         else:
             raise
 
+    def plot_phi_T(self):
+        phi_T, _, _ = self.get_seq_latent_par()
+        phi_i_T = phi_T[:self.N,:]
+        phi_o_T = phi_T[self.N:,:]
+        fig, ax = plt.subplots(2,1)
+        ax[0].plot(phi_i_T.T)
+        ax[1].plot(phi_o_T.T)
+        return fig, ax
 
     def estimate_ss_seq_joint(self, tb_log_flag=True):
         """
         Estimate from sequence of observations a set of parameters that can be time varying or constant. If time varying estimate a different set of parameters for each time step
         """
         
+        self.run_checks()
 
         self.set_all_requires_grad(True)
 
@@ -524,7 +553,7 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
 
         optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], min_opt_iter=self.opt_options_ss_seq["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = hparams_dict)
 
-        self.identify_phi_io_phi_T()
+        self.identify_sequence()
 
 class dirSpW1_SD(dirSpW1_sequence_ss):
     """
@@ -538,33 +567,72 @@ class dirSpW1_SD(dirSpW1_sequence_ss):
         
         self.opt_options_sd = opt_options_sd
         
-        self.B0=0.9
-        self.A0=0.01
+        self.B0 = self.re2un_B_par( torch.ones(1) * 0.9)
+        self.A0 = self.re2un_A_par( torch.ones(1) * 0.01)
 
+
+        self.phi_T_sd = [torch.zeros(self.N*2, requires_grad=True) for t in range(self.T)]
         if self.phi_tv:
-            n_sd_par = self.phi_T[0].shape
-            self.sd_un_phi = nn.ParameterDict({"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*self.B0),"A" :nn.Parameter(torch.ones(n_sd_par)*self.A0)})
+            n_sd_par = self.get_phi_T()[0].shape
+            self.sd_stat_par_un_phi = nn.ParameterDict({"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*self.B0),"A" :nn.Parameter(torch.ones(n_sd_par)*self.A0)})
+    
+            self.phi_T = None
 
+
+        self.dist_par_un_T_sd = [torch.zeros(self.size_dist_par_un_t, requires_grad=True) for t in range(self.T)]     
         if self.dist_par_tv:
-            n_sd_par = self.dist_par_un_T[0].shape
-            self.sd_un_dist_par_un = nn.ParameterDict({"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*self.B0),"A" :nn.Parameter(torch.ones(n_sd_par)*self.A0)})
+            n_sd_par = self.get_dist_par_un_T()[0].shape
+            self.sd_stat_par_un_dist_par_un = nn.ParameterDict({"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*self.B0),"A" :nn.Parameter(torch.ones(n_sd_par)*self.A0)})
+    
+            self.dist_par_un_T = None
 
+        if self.beta_T is None:
+            self.beta_T_sd = None
+        else:
+            self.beta_T_sd = [torch.zeros(self.size_beta_t, self.n_reg,requires_grad=True) for t in range(self.T)]     
+    
         if any(self.beta_tv):
-            n_sd_par = self.beta_T[0].shape
-            self.sd_un_beta = nn.ParameterDict({"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*self.B0),"A" :nn.Parameter(torch.ones(n_sd_par)*self.A0), })
+            n_sd_par = self.get_beta_T()[0].shape
+            self.sd_stat_par_un_beta = nn.ParameterDict({"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*self.B0),"A" :nn.Parameter(torch.ones(n_sd_par)*self.A0), })
 
+            if not all(self.beta_tv):
+                raise
+
+            self.beta_T = None
+            
         self.rescale_SD = rescale_SD
         self.init_sd_type = init_sd_type
    
+    def get_phi_T(self):
+        if self.phi_tv:
+            return self.phi_T_sd
+        else:
+            return super().get_phi_T()
 
-    def un2re_BA_par( BA_un):
-        B_un, A_un = splitVec(BA_un)
+    def get_dist_par_un_T(self):
+        if self.dist_par_tv:
+            return self.dist_par_un_T_sd
+        else:
+            return super().get_dist_par_un_T()
+
+    def get_beta_T(self):
+        if self.beta_tv:
+            return self.beta_T_sd
+        else:
+            return super().get_beta_T()
+
+    def un2re_B_par(self, B_un):
         exp_B = torch.exp(B_un)
-        return torch.cat((torch.div(exp_B, (1 + exp_B)), torch.exp(A_un)))
+        return torch.div(exp_B, (1 + exp_B))
 
-    def re2un_BA_par(BA_re):
-        B_re, A_re = splitVec(BA_re)
-        return torch.cat((torch.log(torch.div(B_re, 1 - B_re)), torch.log(A_re)))
+    def un2re_A_par(self, A_un):
+        return  torch.exp(A_un)
+
+    def re2un_B_par(self, B_re):
+        return torch.log(torch.div(B_re, 1 - B_re))
+
+    def re2un_A_par(self, A_re):
+        return  torch.log(A_re)
 
     def score_t(self, t):
         """
@@ -658,12 +726,14 @@ class dirSpW1_SD(dirSpW1_sequence_ss):
         #     sd_par_0 = phi_0
         # return sd_par_0
        
-    def update_dynw_par(self, t):
+    def update_dynw_par(self, tp1):
         """
         score driven update of the parameters related with the weights: phi_i phi_o
         w_i and w_o need to be vectors of size N, B and A can be scalars or Vectors
         Identify the vector before updating and after
         """
+
+        t = tp1-1
 
         phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
 
@@ -673,41 +743,45 @@ class dirSpW1_SD(dirSpW1_sequence_ss):
 
             phi_t = self.identify_phi_io(phi_t)
 
-            phi_i_t, phi_o_t = splitVec(phi_t)
-        
-            s_i, s_o = splitVec(score_dict["phi"])  
-            w_i, w_o = splitVec(self.sd_un_phi["w"])  
-            B_i, B_o = splitVec(self.sd_un_phi["B"])  
-            A_i, A_o = splitVec(self.sd_un_phi["A"])  
-            
-            phi_i_tp1 = w_i + torch.mul(B_i, phi_i_t) + torch.mul(A_i, s_i)
-            phi_o_tp1 = w_o + torch.mul(B_o, phi_o_t) + torch.mul(A_o, s_o)
-            phi_tp1 = self.identify_phi_io(torch.cat((phi_i_tp1, phi_o_tp1)))
+            s = score_dict["phi"]
+            w = self.sd_stat_par_un_phi["w"]
+            B = self.un2re_B_par(self.sd_stat_par_un_phi["B"])  
+            A = self.un2re_A_par(self.sd_stat_par_un_phi["A"])  
+            phi_tp1 = w + torch.mul(B, phi_t) + torch.mul(A, s)
 
-            with torch.no_grad():
-                self.phi_T[t+1][:] = phi_tp1[:]
+            # phi_tp1 = self.identify_phi_io(phi_tp1)
+
+            self.phi_T_sd[t+1] = phi_tp1
 
         if self.dist_par_tv:            
-            s = score_dict["dist_par_un"]  
-            w = self.sd_un_dist_par_un["w"]  
-            B = self.sd_un_dist_par_un["B"]  
-            A = self.sd_un_dist_par_un["A"]  
-            
+
+            s = score_dict["dist_par_un"]
+            w = self.sd_stat_par_un_dist_par_un["w"]  
+            B = self.un2re_B_par(self.sd_stat_par_un_dist_par_un["B"])  
+            A = self.un2re_A_par(self.sd_stat_par_un_dist_par_un["A"])  
+
             dist_par_un_tp1 = w + torch.mul(B, dist_par_un_t) + torch.mul(A, s)
 
-            self.dist_par_un_T[t+1] = dist_par_un_tp1
+            self.dist_par_un_T_sd[t+1] = dist_par_un_tp1
 
         if any(self.beta_tv):
-            s = score_dict["beta"]  
-            w = self.sd_un_beta["w"]  
-            B = self.sd_un_beta["B"]  
-            A = self.sd_un_beta["A"]  
+    
+            s = score_dict["beta"] 
+            w = self.sd_stat_par_un_beta["w"]  
+            B = self.un2re_B_par(self.sd_stat_par_un_beta["B"])  
+            A = self.un2re_A_par(self.sd_stat_par_un_beta["A"])  
             
             beta_tp1 = w + torch.mul(B, beta_t) + torch.mul(A, s)
 
-            raise Exception("need to add identification if needed and appropriate  assignment of beta_T[t+1] using no_grad") 
             # self.identify_phi_io_beta....
-            self.beta_T[t+1] = beta_tp1
+            self.beta_T_sd[t+1] = beta_tp1
+
+    def plot_sd_par(self):
+        fig, ax = plt.subplots(3,1)
+        ax[0].plot(self.sd_stat_par_un_phi["w"].detach())
+        ax[0].plot(self.sd_stat_par_un_phi["B"].detach())
+        ax[0].plot(self.sd_stat_par_un_phi["A"].detach())
+        return fig, ax
 
     def roll_sd_filt(self):
 
@@ -720,11 +794,15 @@ class dirSpW1_SD(dirSpW1_sequence_ss):
         for t in range(self.T-1):
             self.update_dynw_par(t)
 
+        self.identify_sequence()
+
     def append_all_par_dict_to_list(self, par_dict, par_list):
         for v in par_dict.values():
             par_list.append(v)
 
     def estimate_sd(self, tb_log_flag=True, phi_par_init="fast_mle"):
+
+        self.run_checks()
 
         self.set_all_requires_grad(True)
         
@@ -736,19 +814,20 @@ class dirSpW1_SD(dirSpW1_sequence_ss):
         par_l_to_opt = [] 
         
         if self.phi_tv:
-            self.append_all_par_dict_to_list(self.sd_un_phi, par_l_to_opt)
+            self.append_all_par_dict_to_list(self.sd_stat_par_un_phi, par_l_to_opt)
         else:
-            par_l_to_opt.append(self.phi_T[0])
+            par_l_to_opt.append(self.get_phi_T()[0])
 
         if self.dist_par_tv:
-            self.append_all_par_dict_to_list(self.sd_un_dist_par_un, par_l_to_opt)
+            self.append_all_par_dict_to_list(self.sd_stat_par_un_dist_par_un, par_l_to_opt)
         else:
-            par_l_to_opt.append(self.dist_par_un_T[0])
+            par_l_to_opt.append(self.get_dist_par_un_T()[0])
 
         if any(self.beta_tv):
-            par_l_to_opt.append(self.sd_un_beta)
-        elif self.beta_T is not None:
-            par_l_to_opt.append(self.beta_T[0])
+             self.append_all_par_dict_to_list(self.sd_stat_par_un_beta, par_l_to_opt)
+            
+        elif self.get_beta_T() is not None:
+            par_l_to_opt.append(self.get_beta_T()[0])
 
         
         run_name = f"{self.data_name}_ScoreDriven"
@@ -756,5 +835,6 @@ class dirSpW1_SD(dirSpW1_sequence_ss):
         hparams_dict = {"phi_tv" :self.phi_tv, "dist_par_tv" :self.dist_par_tv, "beta_tv" :tens(self.beta_tv), "phi_par_init" :phi_par_init, "init_sd_type" :self.init_sd_type}
 
 
-        optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], min_opt_iter=self.opt_options_ss_seq["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = hparams_dict)
+        return optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], min_opt_iter=self.opt_options_sd["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = hparams_dict)
+
 

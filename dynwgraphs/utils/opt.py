@@ -254,13 +254,16 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
 
         logger.info(f"loss {loss.item()}")
 
-    logger.info(f"final loss {loss.item()}")
+    final_loss = closure()
+    logger.info(f"final loss {final_loss.item()}")
     if tb_log_flag:
         metric_dict = {"final_loss" :loss.item()}
         writer.add_hparams(hparams_dict, metric_dict)
        
         writer.flush()
         writer.close()
+
+    return optimizer
 
 
 
