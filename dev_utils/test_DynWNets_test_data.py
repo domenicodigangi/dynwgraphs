@@ -37,7 +37,7 @@ model.opt_options_ss_t["max_opt_iter"] = 100
 
 
 model.estimate_ss_t(1, est_phi=True, est_beta = True, est_dist_par=False)
-model.get_par_data()
+model.get_seq_latent_par()
 
 
 #%% Test sequence of single snapshot estimates of  phi_T
@@ -47,7 +47,7 @@ model.opt_options_ss_seq["opt_n"] = "LBFGS"
 
 
 model.estimate_ss_seq_joint()
-model.get_par_data()
+model.get_seq_latent_par()
 model.identify_sequence()
 
 t=56
@@ -66,17 +66,21 @@ model = dirSpW1_SD(Y_T, ovflw_lm=True, distr = 'gamma', rescale_SD=True) # 'logn
 
 model = dirSpW1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], ovflw_lm=True, distr = 'gamma', rescale_SD=False) # 'lognormal')
 
-model.opt_options_sd["max_opt_iter"] = 100
+model.opt_options_sd["max_opt_iter"] = 20
 model.opt_options_sd["opt_n"] = "ADAM"
 
 
-model.estimate_ss_t(0, True, True, True)
 
 optimizer = model.estimate_sd()
 
-model.get_beta_T()
+model.get_seq_latent_par()
+
+model.get_phi_T()
+
+model.get_unc_mean(model.sd_stat_par_un_phi)
 
 model.roll_sd_filt()
+
 
 model.plot_phi_T()
 
