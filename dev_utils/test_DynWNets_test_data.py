@@ -43,7 +43,7 @@ model.get_seq_latent_par()
 #%% Test sequence of single snapshot estimates of  phi_T
 model = dirSpW1_sequence_ss(Y_T, X_T=X_T_test, ovflw_lm=True, distr = 'gamma', size_beta_t=1, beta_tv=[True, True]) # 'lognormal')
 model.opt_options_ss_seq["max_opt_iter"] = 10
-model.opt_options_ss_seq["opt_n"] = "LBFGS"
+model.opt_options_ss_seq["opt_n"] = "ADAM"
 
 
 model.estimate_ss_seq_joint()
@@ -66,7 +66,7 @@ model = dirSpW1_SD(Y_T, ovflw_lm=True, distr = 'gamma', rescale_SD=True) # 'logn
 
 model = dirSpW1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], ovflw_lm=True, distr = 'gamma', rescale_SD=False) # 'lognormal')
 
-model.opt_options_sd["max_opt_iter"] = 20
+model.opt_options_sd["max_opt_iter"] = 20000
 model.opt_options_sd["opt_n"] = "ADAM"
 
 

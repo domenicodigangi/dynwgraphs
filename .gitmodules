@@ -1,0 +1,3 @@
+[submodule "dynwgraphs/adahessian"]
+	path = dynwgraphs/adahessian
+	url = https://github.com/domenicodigangi/adahessian.git

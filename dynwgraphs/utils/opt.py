@@ -29,6 +29,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import chi2
 from pathlib import Path
+from dynwgraphs.adahessian.image_classification.optim_adahessian import Adahessian
 
 from ..lbfgsnew import LBFGSNew
 from torch.utils.tensorboard import SummaryWriter
@@ -179,7 +180,8 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
                   "NESTEROV_1" : torch.optim.SGD(unPar, lr=lr, momentum=0.5, nesterov=True),
                   "NESTEROV_2" : torch.optim.SGD(unPar, lr=lr, momentum=0.7, nesterov=True),
                   "LBFGS" : torch.optim.LBFGS(unPar, lr=lr),
-                  "LBFGS_NEW" : LBFGSNew(unPar, lr=lr, line_search_fn = True)}
+                  "LBFGS_NEW" : LBFGSNew(unPar, lr=lr, line_search_fn = True),
+                  "ADAHESSIAN" : Adahessian(unPar, lr=lr,  betas= (0.9, 0.999), weight_decay=0)}
 
     hparams_dict = {"optimizer" :opt_n,  "lr" :lr, "max_opt_iter" :max_opt_iter, "rel_improv_tol" :rel_improv_tol, "no_improv_max_count" :no_improv_max_count,  "min_opt_iter" :min_opt_iter, "bandwidth" :bandwidth, "n_learned_par" :sum((p.numel() for p in unPar))}
 
@@ -201,8 +203,12 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     def closure():
         optimizer.zero_grad()
         loss = obj_fun_()
-        loss.backward()
+        if opt_n == "ADAHESSIAN":
+            loss.backward(create_graph=True)
+        else:
+            loss.backward()
         return loss
+
 
     last_print_it=0
     diag = []
@@ -252,7 +258,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
             writer.add_scalar('Loss/roll_avg_rel_improv', roll_rel_im, n_iter)
             writer.add_scalar('Loss/roll_avg_rel_improv', grad_norm, n_iter)
 
-        logger.info(f"loss {loss.item()}")
+        logger.info(f" iter {n_iter}, grad norm {'{:.3e}'.format(grad_norm)}, roll rel improv { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
 
     final_loss = closure()
     logger.info(f"final loss {final_loss.item()}")
