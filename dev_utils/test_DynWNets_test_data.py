@@ -17,7 +17,7 @@ import torch
 import matplotlib.pyplot as plt
 import dynwgraphs
 from dynwgraphs.utils.tensortools import tens, splitVec
-from dynwgraphs.dirSpW1_dynNets_new import  dirSpW1_funs, dirSpW1_sequence_ss, dirSpW1_SD
+from dynwgraphs.dirSpW1_dynNets import  dirSpW1_sequence_ss, dirSpW1_SD
 import importlib
 
 from torch.functional import split
@@ -51,8 +51,8 @@ model.get_seq_latent_par()
 model.identify_sequence()
 
 t=56
-phi_t = model.phi_T[t][:]
-beta_t = model.beta_T[t][:][:,model.reg_cross_unique]
+phi_t = model.phi_T[t]
+beta_t = model.beta_T[t][:,model.reg_cross_unique]
 x_t = model.X_T[0,0,model.reg_cross_unique,t]
 
 phi_t_identified = model.identify_phi_io(phi_t)

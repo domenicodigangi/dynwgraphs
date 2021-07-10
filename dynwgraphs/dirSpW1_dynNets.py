@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # --------- Zero Augmented Static model functions
 #self = dirSpW1_dynNet_SD(ovflw_lm=True, rescale_SD = False )
 
-class dirSpW1_funs(nn.Module):
+class dirGraphs_funs(nn.Module):
     """
     This class collects core methods used to model one observation of directed weighted sparse static networks, modelled with a zero augmented distribution, one  parameter per each node (hence the 1 in the name)
     """
@@ -171,125 +171,35 @@ class dirSpW1_funs(nn.Module):
         return torch.cat((phi_i_out, phi_o_out)), beta_out
 
     def start_phi_from_obs(self, Y_t):
-        N = Y_t.shape[0]
-        A_t = tens(Y_t > 0)
-        S_i = Y_t.sum(dim=0)
-        S_o = Y_t.sum(dim=1)
-        S_sqrt = S_i.sum().sqrt()
-        K_i = A_t.sum(dim=0)
-        K_o = A_t.sum(dim=1)
-        phi_t_0_i = torch.log(S_i/S_sqrt )#* (N/K_i) )
-        phi_t_0_o = torch.log(S_o/S_sqrt )#* (N/K_o) )
-
-        phi_t_0 = torch.cat((phi_t_0_i, phi_t_0_o))
-
-        max_val = phi_t_0[~torch.isnan(phi_t_0)].max()
-        phi_t_0[torch.isnan(phi_t_0)] = -max_val
-        phi_t_0[~torch.isfinite(phi_t_0)] = - max_val
-        phi_t_0_i[K_i == 0] = - max_val
-        phi_t_0_o[K_o == 0] = - max_val
-
-        return self.identify_phi_io(phi_t_0)
+        pass
 
     def dist_from_pars(self, phi, beta, X_t, dist_par_un, A_t=None):
         """
         return a pytorch distribution. it can be matrix valued (if no A_t is given) or vector valued
         """
-        N = phi.shape[0]//2
-        # Restrict the distribution parameters.
-        dist_par_re = self.link_dist_par(dist_par_un, N, A_t=A_t)
-        if self.distr == 'gamma':
-            EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t)
-            if A_t is None:
-                rate = torch.div(dist_par_re, EYcond_mat)
-                distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
-            else:# if A_t is given, we already took into account the dimension of dist_par above when restricting it
-                rate = torch.div(dist_par_re, EYcond_mat[A_t])
-                distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
-
-        elif self.distr == 'lognormal':
-            log_EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t, ret_log=True)
-            if A_t is None:
-                sigma = dist_par_re
-                mu = log_EYcond_mat - (sigma ** 2) / 2
-                distr_obj = torch.distributions.log_normal.LogNormal(mu, sigma)
-            else:  # if A_t is given, we already took into account the dimension of dist_par above when restricting it
-                sigma = dist_par_re
-                mu = log_EYcond_mat[A_t] - (sigma ** 2) / 2
-                distr_obj = torch.distributions.log_normal.LogNormal(mu, sigma)
-        return distr_obj
+        pass
 
     def loglike_t(self, Y_t, phi, beta, X_t, dist_par_un):
         """ The log likelihood of the zero augmented gamma network model as a function of the observations
         """
-        #disregard self loops if present
-        Y_t = putZeroDiag(Y_t)
-        A_t = Y_t > 0
-        N = A_t.shape[0]
-        if dist_par_un is None:
-            dist_par_un = self.dist_par_un_start_val()
-
-        if (self.distr == 'gamma') and (self.like_type in [0, 1]):# if non torch computation of the likelihood is required
-            # Restrict the distribution parameters.
-            dist_par_re = self.link_dist_par(dist_par_un, N, A_t)
-            if self.like_type==0:
-                """ numerically stable version """
-                log_EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t, ret_log=True)
-                # divide the computation of the loglikelihood in 4 pieces
-                tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
-                tmp1 = - torch.sum(A_t) * torch.lgamma(dist_par_re)
-                tmp2 = - dist_par_re * torch.sum(log_EYcond_mat[A_t])
-                #tmp3 = - torch.sum(torch.div(Y_t[A_t], torch.exp(log_EYcond_mat[A_t])))
-                tmp3 = - torch.sum(torch.exp(torch.log(Y_t[A_t])-log_EYcond_mat[A_t] + dist_par_re.log() ))
-                out = tmp + tmp1 + tmp2 + tmp3
-            elif self.like_type == 1:
-                EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t)
-                # divide the computation of the loglikelihood in 4 pieces
-                tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
-                tmp1 = - torch.sum(A_t) * torch.lgamma(dist_par_re)
-                tmp2 = - dist_par_re * torch.sum(torch.log(EYcond_mat[A_t]))
-                tmp3 = - torch.sum(torch.div(Y_t[A_t], EYcond_mat[A_t])*dist_par_re)
-                out = tmp + tmp1 + tmp2 + tmp3
-
-        else:# compute the likelihood using torch buit in functions
-            distr_obj = self.dist_from_pars(phi, beta, X_t, dist_par_un, A_t=A_t)
-            log_probs = distr_obj.log_prob(Y_t[A_t])
-            out = torch.sum(log_probs)        # softly bound loglikelihood from below??
-
-        #out = soft_l_bound(out, -1e20)
-        return out
+        pass
 
     def link_dist_par(self, dist_par_un, N, A_t=None):
         """
         take as input the unrestricted version of distribution parameters (the ones that we optimize)
         return their restricted versions, compatible with the different distributions
         """
-        if (self.distr == 'gamma') | (self.distr == 'lognormal'):
-            if dist_par_un.shape[0] == 1:
-                dist_par_re = torch.exp(dist_par_un)
-            elif dist_par_un.shape[0] == N:
-                dist_par_re = torch.exp(dist_par_un + dist_par_un.unsqueeze(1))
-                if A_t is not None:
-                    dist_par_re = dist_par_re[A_t]
-        return dist_par_re
+        pass
 
     def dist_par_un_start_val(self):
-        if self.distr=='gamma':
-            # starting point for log(alpha) in gamma distribution
-            dist_par_un0 = torch.zeros(self.size_dist_par_un_t)
-        elif self.distr=='lognormal':
-            # starting point for log(alpha) in gamma distribution
-            dist_par_un0 = torch.zeros(self.size_dist_par_un_t)
-        return dist_par_un0
-    
-    def check_tot_exp(self, Y_t, phi_t, X_t, beta_t):
-        EYcond_mat = self.cond_exp_Y(phi_t, beta=beta_t, X_t=X_t)
-        EYcond_mat = putZeroDiag(EYcond_mat)
-        A_t=putZeroDiag(Y_t)>0
-        return torch.sum(Y_t[A_t])/torch.sum(EYcond_mat[A_t]), torch.mean(Y_t[A_t]/EYcond_mat[A_t])
-
+        pass    
   
-class dirSpW1_sequence_ss(dirSpW1_funs):
+    def check_tot_exp(self, Y_t, phi_t, X_t, beta_t):
+        pass
+
+
+
+class dirGraphs_sequence_ss(dirGraphs_funs):
     """
     Single snapshot sequence
     """
@@ -407,7 +317,7 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
                 x_t = self.X_T[0, 0, self.reg_cross_unique, t]
                 self.phi_T[t][:], self.beta_T[t][:, self.reg_cross_unique] = self.identify_phi_io_beta(phi_t_identified, beta_t, x_t )    
             else:
-                self.phi_T[t][:] = phi_t_identified
+                self.phi_T[t] = phi_t_identified
 
     def check_regressors_seq_shape(self):
         """
@@ -567,7 +477,7 @@ class dirSpW1_sequence_ss(dirSpW1_funs):
         self.identify_sequence()
 
 
-class dirSpW1_SD(dirSpW1_sequence_ss):
+class dirGraphs_SD(dirGraphs_sequence_ss):
     """
         Version With Score Driven parameters.
         
@@ -625,70 +535,8 @@ class dirSpW1_SD(dirSpW1_sequence_ss):
         return  torch.log(A_re)
 
     def score_t(self, t):
-        """
-        given the observations and the ZA gamma parameters (i.e. the cond mean
-        matrix and the dist_par_un par), return the score of the distribution wrt to, node
-        specific, parameters associated with the weights
-        """
+        pass
 
-        Y_t, X_t = self.get_obs_t(t)
-
-        phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
-
-        A_t_bool = Y_t > 0
-        A_t = tens(A_t_bool)
-        
-        score_dict = {}
-        if  any(self.beta_tv) | self.dist_par_tv:
-            
-            # compute the score with AD using Autograd
-            like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
-
-            if any(self.beta_tv):
-                score_dict["beta"] = grad(like_t, beta_t, create_graph=True)[0]
-            if self.dist_par_tv:
-                score_dict["dist_par_un"] = grad(like_t, dist_par_un_t, create_graph=True)[0]
-            if self.rescale_SD:
-                raise "Rescaling not ready for beta and dist par"
-
-        if self.phi_tv:
-            sigma_mat = self.link_dist_par(dist_par_un_t, self.N)
-            log_cond_exp_Y, log_cond_exp_Y_restr, cond_exp_Y = self.cond_exp_Y(phi_t, beta=beta_t, X_t=X_t, ret_all=True)
-
-            if self.distr == 'gamma':
-                tmp = (Y_t.clone()/cond_exp_Y - A_t)*sigma_mat
-                if self.rescale_SD:
-                    diag_resc_mat = sigma_mat*A_t
-
-            elif self.distr == 'lognormal':
-                sigma2_mat = sigma_mat**2
-                log_Y_t = torch.zeros(self.N, self.N)
-                log_Y_t[A_t_bool] = Y_t[A_t_bool].log()
-                tmp = (log_Y_t - log_cond_exp_Y_restr*A_t)/sigma2_mat + A_t/2
-                if self.rescale_SD:
-                    diag_resc_mat = (sigma_mat**2)**A_t
-
-            if self.ovflw_lm:
-                L = self.ovflw_exp_L_limit
-                U = self.ovflw_exp_U_limit
-                # multiply the score by the derivative of the overflow limit function
-                soft_bnd_der_mat = (1 - torch.tanh(2*((log_cond_exp_Y - L)/(L - U)) + 1)**2)
-                tmp = soft_bnd_der_mat * tmp
-                if self.rescale_SD:
-                    diag_resc_mat = diag_resc_mat * (soft_bnd_der_mat**2)
-
-            score_phi = strIO_from_mat(tmp)
-
-            #rescale score if required
-            if self.rescale_SD:
-                diag_resc = strIO_from_mat(diag_resc_mat)
-                diag_resc[diag_resc==0] = 1
-                score_phi = score_phi/diag_resc.sqrt()
-
-            score_dict["phi"] = score_phi
-
-        return score_dict
-       
     def update_dynw_par(self, t_to_be_updated):
         """
         score driven update of the parameters related with the weights: phi_i phi_o
@@ -842,5 +690,198 @@ class dirSpW1_SD(dirSpW1_sequence_ss):
 
 
         return optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], min_opt_iter=self.opt_options_sd["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = hparams_dict)
+
+
+class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
+  
+    def start_phi_from_obs(self, Y_t):
+        N = Y_t.shape[0]
+        A_t = tens(Y_t > 0)
+        S_i = Y_t.sum(dim=0)
+        S_o = Y_t.sum(dim=1)
+        S_sqrt = S_i.sum().sqrt()
+        K_i = A_t.sum(dim=0)
+        K_o = A_t.sum(dim=1)
+        phi_t_0_i = torch.log(S_i/S_sqrt )#* (N/K_i) )
+        phi_t_0_o = torch.log(S_o/S_sqrt )#* (N/K_o) )
+
+        phi_t_0 = torch.cat((phi_t_0_i, phi_t_0_o))
+
+        max_val = phi_t_0[~torch.isnan(phi_t_0)].max()
+        phi_t_0[torch.isnan(phi_t_0)] = -max_val
+        phi_t_0[~torch.isfinite(phi_t_0)] = - max_val
+        phi_t_0_i[K_i == 0] = - max_val
+        phi_t_0_o[K_o == 0] = - max_val
+
+        return self.identify_phi_io(phi_t_0)
+
+    def dist_from_pars(self, phi, beta, X_t, dist_par_un, A_t=None):
+        """
+        return a pytorch distribution. it can be matrix valued (if no A_t is given) or vector valued
+        """
+        N = phi.shape[0]//2
+        # Restrict the distribution parameters.
+        dist_par_re = self.link_dist_par(dist_par_un, N, A_t=A_t)
+        if self.distr == 'gamma':
+            EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t)
+            if A_t is None:
+                rate = torch.div(dist_par_re, EYcond_mat)
+                distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
+            else:# if A_t is given, we already took into account the dimension of dist_par above when restricting it
+                rate = torch.div(dist_par_re, EYcond_mat[A_t])
+                distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
+
+        elif self.distr == 'lognormal':
+            log_EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t, ret_log=True)
+            if A_t is None:
+                sigma = dist_par_re
+                mu = log_EYcond_mat - (sigma ** 2) / 2
+                distr_obj = torch.distributions.log_normal.LogNormal(mu, sigma)
+            else:  # if A_t is given, we already took into account the dimension of dist_par above when restricting it
+                sigma = dist_par_re
+                mu = log_EYcond_mat[A_t] - (sigma ** 2) / 2
+                distr_obj = torch.distributions.log_normal.LogNormal(mu, sigma)
+        return distr_obj
+
+    def loglike_t(self, Y_t, phi, beta, X_t, dist_par_un):
+        """ The log likelihood of the zero augmented gamma network model as a function of the observations
+        """
+        #disregard self loops if present
+        Y_t = putZeroDiag(Y_t)
+        A_t = Y_t > 0
+        N = A_t.shape[0]
+        if dist_par_un is None:
+            dist_par_un = self.dist_par_un_start_val()
+
+        if (self.distr == 'gamma') and (self.like_type in [0, 1]):# if non torch computation of the likelihood is required
+            # Restrict the distribution parameters.
+            dist_par_re = self.link_dist_par(dist_par_un, N, A_t)
+            if self.like_type==0:
+                """ numerically stable version """
+                log_EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t, ret_log=True)
+                # divide the computation of the loglikelihood in 4 pieces
+                tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
+                tmp1 = - torch.sum(A_t) * torch.lgamma(dist_par_re)
+                tmp2 = - dist_par_re * torch.sum(log_EYcond_mat[A_t])
+                #tmp3 = - torch.sum(torch.div(Y_t[A_t], torch.exp(log_EYcond_mat[A_t])))
+                tmp3 = - torch.sum(torch.exp(torch.log(Y_t[A_t])-log_EYcond_mat[A_t] + dist_par_re.log() ))
+                out = tmp + tmp1 + tmp2 + tmp3
+            elif self.like_type == 1:
+                EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t)
+                # divide the computation of the loglikelihood in 4 pieces
+                tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
+                tmp1 = - torch.sum(A_t) * torch.lgamma(dist_par_re)
+                tmp2 = - dist_par_re * torch.sum(torch.log(EYcond_mat[A_t]))
+                tmp3 = - torch.sum(torch.div(Y_t[A_t], EYcond_mat[A_t])*dist_par_re)
+                out = tmp + tmp1 + tmp2 + tmp3
+
+        else:# compute the likelihood using torch buit in functions
+            distr_obj = self.dist_from_pars(phi, beta, X_t, dist_par_un, A_t=A_t)
+            log_probs = distr_obj.log_prob(Y_t[A_t])
+            out = torch.sum(log_probs)        # softly bound loglikelihood from below??
+
+        #out = soft_l_bound(out, -1e20)
+        return out
+
+    def link_dist_par(self, dist_par_un, N, A_t=None):
+        """
+        take as input the unrestricted version of distribution parameters (the ones that we optimize)
+        return their restricted versions, compatible with the different distributions
+        """
+        if (self.distr == 'gamma') | (self.distr == 'lognormal'):
+            if dist_par_un.shape[0] == 1:
+                dist_par_re = torch.exp(dist_par_un)
+            elif dist_par_un.shape[0] == N:
+                dist_par_re = torch.exp(dist_par_un + dist_par_un.unsqueeze(1))
+                if A_t is not None:
+                    dist_par_re = dist_par_re[A_t]
+        return dist_par_re
+
+    def dist_par_un_start_val(self):
+        if self.distr=='gamma':
+            # starting point for log(alpha) in gamma distribution
+            dist_par_un0 = torch.zeros(self.size_dist_par_un_t)
+        elif self.distr=='lognormal':
+            # starting point for log(alpha) in gamma distribution
+            dist_par_un0 = torch.zeros(self.size_dist_par_un_t)
+        return dist_par_un0
+    
+    def check_tot_exp(self, Y_t, phi_t, X_t, beta_t):
+        EYcond_mat = self.cond_exp_Y(phi_t, beta=beta_t, X_t=X_t)
+        EYcond_mat = putZeroDiag(EYcond_mat)
+        A_t=putZeroDiag(Y_t)>0
+        return torch.sum(Y_t[A_t])/torch.sum(EYcond_mat[A_t]), torch.mean(Y_t[A_t]/EYcond_mat[A_t])
+
+    
+class dirSpW1_SD(dirSpW1_sequence_ss):
+
+    def score_t(self, t):
+
+        """
+        given the observations and the ZA gamma parameters (i.e. the cond mean
+        matrix and the dist_par_un par), return the score of the distribution wrt to, node
+        specific, parameters associated with the weights
+        """
+
+        Y_t, X_t = self.get_obs_t(t)
+
+        phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
+
+        A_t_bool = Y_t > 0
+        A_t = tens(A_t_bool)
+        
+        score_dict = {}
+        if  any(self.beta_tv) | self.dist_par_tv:
+            
+            # compute the score with AD using Autograd
+            like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
+
+            if any(self.beta_tv):
+                score_dict["beta"] = grad(like_t, beta_t, create_graph=True)[0]
+            if self.dist_par_tv:
+                score_dict["dist_par_un"] = grad(like_t, dist_par_un_t, create_graph=True)[0]
+            if self.rescale_SD:
+                raise "Rescaling not ready for beta and dist par"
+
+        if self.phi_tv:
+            sigma_mat = self.link_dist_par(dist_par_un_t, self.N)
+            log_cond_exp_Y, log_cond_exp_Y_restr, cond_exp_Y = self.cond_exp_Y(phi_t, beta=beta_t, X_t=X_t, ret_all=True)
+
+            if self.distr == 'gamma':
+                tmp = (Y_t.clone()/cond_exp_Y - A_t)*sigma_mat
+                if self.rescale_SD:
+                    diag_resc_mat = sigma_mat*A_t
+
+            elif self.distr == 'lognormal':
+                sigma2_mat = sigma_mat**2
+                log_Y_t = torch.zeros(self.N, self.N)
+                log_Y_t[A_t_bool] = Y_t[A_t_bool].log()
+                tmp = (log_Y_t - log_cond_exp_Y_restr*A_t)/sigma2_mat + A_t/2
+                if self.rescale_SD:
+                    diag_resc_mat = (sigma_mat**2)**A_t
+
+            if self.ovflw_lm:
+                L = self.ovflw_exp_L_limit
+                U = self.ovflw_exp_U_limit
+                # multiply the score by the derivative of the overflow limit function
+                soft_bnd_der_mat = (1 - torch.tanh(2*((log_cond_exp_Y - L)/(L - U)) + 1)**2)
+                tmp = soft_bnd_der_mat * tmp
+                if self.rescale_SD:
+                    diag_resc_mat = diag_resc_mat * (soft_bnd_der_mat**2)
+
+            score_phi = strIO_from_mat(tmp)
+
+            #rescale score if required
+            if self.rescale_SD:
+                diag_resc = strIO_from_mat(diag_resc_mat)
+                diag_resc[diag_resc==0] = 1
+                score_phi = score_phi/diag_resc.sqrt()
+
+            score_dict["phi"] = score_phi
+
+        return score_dict
+
+
+
 
 
