@@ -38,7 +38,7 @@ class dirGraphs_funs(nn.Module):
     This class collects core methods used to model one observation of directed weighted sparse static networks, modelled with a zero augmented distribution, one  parameter per each node (hence the 1 in the name)
     """
 
-    def __init__(self, ovflw_lm, distr,  size_dist_par_un_t, size_beta_t, like_type, phi_id_type):
+    def __init__(self, ovflw_lm=True, distr="",  size_dist_par_un_t=None, size_beta_t=None, like_type=None, phi_id_type=None):
         super().__init__()
         self.ovflw_lm = ovflw_lm
         self.distr = distr
@@ -194,21 +194,24 @@ class dirGraphs_funs(nn.Module):
     def dist_par_un_start_val(self):
         pass    
   
-    def check_tot_exp(self, Y_t, phi_t, X_t, beta_t):
+    def check_exp_vals(self, t):
         pass
-
 
 
 class dirGraphs_sequence_ss(dirGraphs_funs):
     """
-    Single snapshot sequence
+    Single snapshot sequence of, binary or weighted, fitness models with external regressors. 
     """
 
-    def __init__(self, Y_T, X_T=None, phi_tv=True, phi_par_init="fast_mle", ovflw_lm=True, distr='gamma',  phi_id_type="in_sum_zero", like_type=2,   size_dist_par_un_t = 1, dist_par_tv=False, size_beta_t = 1, beta_tv= tens([False]).bool(), data_name="", 
-            opt_options_ss_t = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}, 
-            opt_options_ss_seq = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}):
+    _opt_options_ss_t_def = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}
+    _opt_options_ss_seq_def = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}
 
-        super().__init__( ovflw_lm, distr,  size_dist_par_un_t, size_beta_t, phi_id_type=phi_id_type, like_type=like_type)
+    # set default init kwargs to be shared between binary and weighted models
+    def __init__(self, Y_T, X_T=None, phi_tv=True, phi_par_init="fast_mle", ovflw_lm=True, distr='',  phi_id_type="in_sum_zero", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = 1, beta_tv= tens([False]).bool(), data_name="", 
+            opt_options_ss_t = _opt_options_ss_t_def, 
+            opt_options_ss_seq = _opt_options_ss_seq_def):
+
+        super().__init__(ovflw_lm=ovflw_lm, distr=distr,  size_dist_par_un_t=size_dist_par_un_t, size_beta_t=size_beta_t, phi_id_type=phi_id_type, like_type=like_type)
         
         self.ovflw_lm = ovflw_lm
         self.Y_T = Y_T
@@ -239,11 +242,14 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         else:
             self.phi_T = [torch.zeros(self.N*2, requires_grad=True) for t in range(self.T)]
 
-        if self.dist_par_tv:
-            self.dist_par_un_T = [torch.zeros(size_dist_par_un_t, requires_grad=True) for t in range(self.T)]
+        if self.size_dist_par_un_t is None:
+            self.dist_par_un_T = None
         else:
-            self.dist_par_un_T = [torch.zeros(size_dist_par_un_t, requires_grad=True)]
-            
+            if self.dist_par_tv:
+                self.dist_par_un_T = [torch.zeros(size_dist_par_un_t, requires_grad=True) for t in range(self.T)]
+            else:
+                self.dist_par_un_T = [torch.zeros(size_dist_par_un_t, requires_grad=True)]
+                
         if self.X_T is None:
             self.beta_T = None
             if any(beta_tv):
@@ -278,12 +284,15 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         else:
             raise
 
-        if self.dist_par_tv:
-            dist_par_un_t = self.dist_par_un_T[t]
-        elif len(self.dist_par_un_T) == 1:
-            dist_par_un_t = self.dist_par_un_T[0]
+        if self.dist_par_un_T is None:
+            dist_par_un_t = None
         else:
-            raise
+            if self.dist_par_tv:
+                dist_par_un_t = self.dist_par_un_T[t]
+            elif len(self.dist_par_un_T) == 1:
+                dist_par_un_t = self.dist_par_un_T[0]
+            else:
+                raise
 
         if self.beta_T is not None:
             if len(self.beta_T) == self.T:
@@ -354,16 +363,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         for p in self.parameters():
             p.requires_grad = flag
 
-    def set_requires_grad_t(self, par_list, t, flag):
-        if par_list is None:
-            raise
-        elif len(par_list) == 1 :
-            par_list[0].requires_grad = flag
-        elif len(par_list) == self.T :
-            par_list[t].requires_grad = flag
-        else:
-            raise
-
     def estimate_ss_t(self, t, est_phi, est_dist_par, est_beta, tb_log_flag=False):
         """
         single snapshot Maximum logLikelihood estimate of phi_t, dist_par_un_t and beta_t
@@ -392,7 +391,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         hparams_dict = {"est_phi" :est_phi, "est_dist_par" :est_dist_par, "est_beta" :est_beta}
 
         optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_ss_t["max_opt_iter"], opt_n=self.opt_options_ss_t["opt_n"], lr=self.opt_options_ss_t["lr"], min_opt_iter=self.opt_options_ss_t["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in=hparams_dict)
-
 
     def loglike_seq_T(self):
         loglike_T = 0
@@ -484,10 +482,11 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         init_sd_type : "unc_mean", "est_joint", "est_ss_before"
     """
 
-    def __init__(self, Y_T, X_T=None, phi_tv=True, ovflw_lm=True, distr='gamma',  size_dist_par_un_t = 1, dist_par_tv=False, size_beta_t = 1, beta_tv=[False], rescale_SD=True, init_sd_type = "unc_mean", data_name="", 
-            opt_options_sd = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}):
+    __opt_options_sd_def = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}
 
-        super().__init__( Y_T = Y_T, X_T=X_T, phi_tv=phi_tv, ovflw_lm=ovflw_lm, distr=distr,  size_dist_par_un_t=size_dist_par_un_t, dist_par_tv=dist_par_tv, size_beta_t=size_beta_t, beta_tv=beta_tv, data_name=data_name)
+    def __init__(self, *args, init_sd_type = "unc_mean", rescale_SD = False, opt_options_sd = __opt_options_sd_def, **kwargs ):
+
+        super().__init__(*args, **kwargs)
         
         self.opt_options_sd = opt_options_sd
         self.rescale_SD = rescale_SD
@@ -691,9 +690,14 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         return optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], min_opt_iter=self.opt_options_sd["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = hparams_dict)
 
+# Weighted Graphs
 
 class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
-  
+    
+    def __init__(self, *args, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, **kwargs):
+
+        super(dirSpW1_sequence_ss, self).__init__( *args, distr = distr, like_type=like_type,  size_dist_par_un_t = size_dist_par_un_t, dist_par_tv= dist_par_tv, **kwargs)
+
     def start_phi_from_obs(self, Y_t):
         N = Y_t.shape[0]
         A_t = tens(Y_t > 0)
@@ -806,14 +810,21 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
             dist_par_un0 = torch.zeros(self.size_dist_par_un_t)
         return dist_par_un0
     
-    def check_tot_exp(self, Y_t, phi_t, X_t, beta_t):
+    def check_exp_vals(self, t,):
+        
+        Y_t, X_t = self.get_obs_t(t)
+        phi_t, _, beta_t = self.get_par_t(t)
         EYcond_mat = self.cond_exp_Y(phi_t, beta=beta_t, X_t=X_t)
         EYcond_mat = putZeroDiag(EYcond_mat)
         A_t=putZeroDiag(Y_t)>0
         return torch.sum(Y_t[A_t])/torch.sum(EYcond_mat[A_t]), torch.mean(Y_t[A_t]/EYcond_mat[A_t])
 
     
-class dirSpW1_SD(dirSpW1_sequence_ss):
+class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
+
+    def __init__(self, *args, **kwargs):
+
+        super(dirSpW1_SD, self).__init__(*args, **kwargs)
 
     def score_t(self, t):
 
@@ -881,7 +892,232 @@ class dirSpW1_SD(dirSpW1_sequence_ss):
 
         return score_dict
 
+# Binary Graphs
+
+class dirBin1_sequence_ss(dirGraphs_sequence_ss):
+
+    
+    def __init__(self, Y_T, *args, **kwargs):
+
+        Y_T = tens(Y_T > 0)
+
+        super(dirBin1_sequence_ss, self).__init__( Y_T, *args, distr = "bernoulli",   **kwargs)
+  
+    def invPiMat(self, phi, beta, X_t, ret_log=False):
+        """
+        given the vector of unrestricted parameters, return the matrix of
+        of the inverses of odds obtained as products of exponentials
+        In the paper we call it 1 / pi = exp(phi_i + phi_j)
+        """
+        phi_i, phi_o = splitVec(phi)
+        log_inv_pi_mat = phi_i + phi_o.unsqueeze(1)
+        if X_t is not None:
+            log_inv_pi_mat = log_inv_pi_mat + self.regr_product(beta, X_t)
+        if self.ovflw_lm:
+            """if required force the exponent to stay whithin overflow-safe bounds"""
+            log_inv_pi_mat =  soft_lu_bound(log_inv_pi_mat, l_limit=self.ovflw_exp_L_limit, u_limit=self.ovflw_exp_U_limit)
+
+        if ret_log:
+            return putZeroDiag(log_inv_pi_mat)
+        else:
+            return putZeroDiag(torch.exp(log_inv_pi_mat))
+
+    def exp_A(self, phi, beta=None, X_t=None):
+        """
+        given the vector of unrestricted parameters, compute the expected
+        matrix, can have non zero elements on the diagonal!!
+        """
+        invPiMat_= self.invPiMat(phi, beta=beta, X_t=X_t)
+        out = invPiMat_/(1 + invPiMat_)
+        return out
+
+    def zero_deg_par_fun(self, Y_t, phi, method="AVGSPACING", degIO=None):
+        """
+        What should be the fitness of nodes with zero degree? The MLE is -inf which is not practical.
+        """
+        if method == "SMALL":
+            #A small number equal for all nodes such that the probability of observing a link is very small
+            zero_deg_par_i = -10
+            zero_deg_par_o = -10
+
+        elif method == "AVGSPACING":
+            # the distance in fitnesses between degrees zero and one is equal to the average fitness distance corresponding
+            # to one degree difference
+            if degIO is None:
+                degIO = strIO_from_mat(Y_t)
+            if (sum(degIO) == 0) | (sum(phi) == 0):
+                raise
+            degI, degO = splitVec(degIO)
+            par_i, par_o = splitVec(phi)
+            imin = degI[degI != 0].argmin()
+            omin = degO[degO != 0].argmin()
+            # find a proxy of the one degree difference between fitnesses
+            diffDegs = degI[degI != 0] - degI[degI != 0][imin]
+            avgParStepI = torch.mean(((par_i[degI != 0] - par_i[degI != 0][imin])[diffDegs != 0]) /
+                                     diffDegs[diffDegs != 0])
+
+            if not torch.isfinite(avgParStepI):
+                print(((par_i  - par_i[imin])[diffDegs != 0]) / diffDegs[diffDegs != 0])
+                raise
+            diffDegs = degO[degO  != 0] - degO[degO != 0][omin]
+            avgParStepO = torch.mean((par_o[degO != 0] - par_o[degO != 0][omin])[diffDegs != 0] /
+                                     diffDegs[diffDegs != 0])
+            if not torch.isfinite(avgParStepO):
+                print(((par_i - par_i[imin])[diffDegs != 0]) / diffDegs[diffDegs != 0])
+                raise
+            # subtract a multiple of this average step to fitnesses of smallest node
+            zero_deg_par_i = par_i[degI != 0][imin] - avgParStepI * degI[degI != 0][imin]
+            zero_deg_par_o = par_o[degO != 0][omin] - avgParStepO * degO[degO != 0][omin]
+
+        elif method == "EXPECTATION":
+            #  Set the fitness to a value s.t  the expectation
+            # of the degrees for each node with deg zero is small
+            N = phi.shape[0]//2
+            max_prob = tens(0.01)
+            if degIO is None:
+                degIO = strIO_from_mat(Y_t)
+            if (sum(degIO) == 0) | (sum(phi) == 0):
+                raise
+            par_i, par_o = splitVec(phi)
+            zero_deg_par_i = - par_o.max() + torch.log(max_prob/N)
+            zero_deg_par_o = - par_i.max() + torch.log(max_prob/N)
+
+        return zero_deg_par_i, zero_deg_par_o
+
+    def set_zero_deg_par(self, Y_t, phi_in, method="AVGSPACING", degIO=None):
+        phi = phi_in.clone()
+        if degIO is None:
+            degIO = strIO_from_mat(Y_t)
+        N = phi.shape[0]//2
+        zero_deg_par_i, zero_deg_par_o = self.zero_deg_par_fun(Y_t, phi, method=method)
+        phi[:N][degIO[:N] == 0] = zero_deg_par_i
+        phi[N:][degIO[N:] == 0] = zero_deg_par_o
+        return phi
+
+    def phiFunc(self, phi, ldeg):
+        ldeg_i, ldeg_o = splitVec(ldeg)
+        phi_i, phi_o = splitVec(phi.exp())
+        mat_i = putZeroDiag(1/(phi_i + (1/phi_o).unsqueeze(1)))
+        mat_o = putZeroDiag(1/((1/phi_i) + phi_o.unsqueeze(1)))
+        out_phi_i = (ldeg_i - torch.log(mat_i.sum(dim=0)))
+        out_phi_o = (ldeg_o - torch.log(mat_o.sum(dim=1)))
+        return torch.cat((out_phi_i, out_phi_o))
+
+    def start_phi_from_obs(self, Y, n_iter=30, degIO=None):
+        if degIO is None:
+            degIO = tens(strIO_from_mat(Y))
+        ldeg = degIO.log()
+        nnzInds = degIO > 0
+        phi_0 = torch.ones(degIO.shape[0]) * (-15)
+        phi_0[nnzInds] = degIO[nnzInds].log()
+        for i in range(n_iter):
+            phi_0 = self.phiFunc(phi_0, ldeg)
+            #phi_0[~nnzInds] = -15
+        phi_0 = self.set_zero_deg_par(Y, phi_0, degIO=degIO)
+        return phi_0.clone()
+
+    def dist_from_pars(self, distr, phi, beta, X_t, dist_par_un, A_t=None):
+        """
+        return a pytorch distribution matrix valued, from the model's parameters
+        """
+        p_mat = self.exp_A(phi, beta=beta, X_t=X_t)
+        dist = torch.distributions.bernoulli.Bernoulli(p_mat)
+        return dist
+
+    def loglike_t(self, Y_t, phi, beta, X_t, degIO=None, **kwargs):
+        """
+        The log likelihood of the zero beta model with or without regressors
+        """
+        #disregard self loops if present
+        Y_t = putZeroDiag(Y_t).clone()
+        if (self.like_type == 0) and (beta is None):
+            # if non torch computation of the likelihood is required (working only with no regressors)
+            if degIO is None:
+                degIO = strIO_from_mat(Y_t)
+            tmp1 = torch.sum(phi * degIO)
+            tmp2 = torch.sum(torch.log(1 + self.invPiMat(phi, beta=beta, X_t=X_t)))
+            out = tmp1 - tmp2
+        else:# compute the likelihood using torch buit in functions
+            dist = self.dist_from_pars(self.distr, phi, beta, X_t, dist_par_un=None, A_t=None)
+            log_probs = dist.log_prob(Y_t).clone()
+            out = torch.sum(log_probs)
+        return out.clone()
 
 
+    def check_exp_vals(self, t):
+        Y_t, X_t = self.get_obs_t(t)
+        phi_t, _, beta_t = self.get_par_t(t)
 
+        degIO = strIO_from_mat(Y_t)
+        nnzInds = degIO != 0
+        expMat = self.exp_A(phi_t, beta=beta_t, X_t=X_t)
+        errsIO = (strIO_from_mat(expMat) - degIO)[nnzInds]
+        relErrsIO = torch.div(torch.abs(errsIO), degIO[nnzInds])
+        out = torch.abs(relErrsIO)  # check if the constraint is satisfied for all degs
+
+        return out.mean()
+
+    
+class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
+
+    def __init__(self, Y_T, X_T=None, phi_tv=True, ovflw_lm=True, distr='gamma',  size_dist_par_un_t = 1, dist_par_tv=False, size_beta_t = 1, beta_tv=[False], rescale_SD=True, init_sd_type = "unc_mean", data_name="", 
+            opt_options_sd = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}):
+
+        Y_T = tens(Y_T > 0)
+        super().__init__( Y_T = Y_T, X_T=X_T, phi_tv=phi_tv, ovflw_lm=ovflw_lm, distr=distr,  size_dist_par_un_t=size_dist_par_un_t, dist_par_tv=dist_par_tv, size_beta_t=size_beta_t, beta_tv=beta_tv, data_name=data_name)
+
+  
+    def score_t(self, t):
+        Y_t, X_t = self.get_obs_t(t)
+
+        phi_t, _, beta_t = self.get_par_t(t)
+
+        A_t_bool = Y_t > 0
+        A_t = tens(A_t_bool)
+        
+        score_dict = {}
+        if  any(self.beta_tv) | self.dist_par_tv:
+            
+            # compute the score with AD using Autograd
+            like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t)
+
+            if any(self.beta_tv):
+                score_dict["beta"] = grad(like_t, beta_t, create_graph=True)[0]
+        
+            if self.rescale_SD:
+                raise "Rescaling not ready for beta and dist par"
+
+        if self.phi_tv:
+
+            exp_A = self.exp_A(phi_t, beta=beta_t, X_t=X_t)
+
+            tmp = A_t - exp_A
+
+            if self.rescale_SD:
+                diag_resc_mat = exp_A * (1 - exp_A)
+
+            if self.ovflw_lm:
+                log_inv_pi__mat = self.invPiMat(phi_t, ret_log=True)
+                L = self.ovflw_exp_L_limit
+                U = self.ovflw_exp_U_limit
+                # multiply the score by the derivative of the overflow limit function
+                soft_bnd_der_mat = (1 - torch.tanh(2*((log_inv_pi__mat - L)/(L - U)) + 1)**2)
+                tmp = soft_bnd_der_mat * tmp
+                if self.rescale_SD:
+                    diag_resc_mat = diag_resc_mat * (soft_bnd_der_mat**2)
+
+            score_phi = strIO_from_mat(tmp)
+     
+            #rescale score if required
+            if self.rescale_SD:
+                diag_resc = torch.cat((diag_resc_mat.sum(dim=0), diag_resc_mat.sum(dim=1)))
+                diag_resc[diag_resc==0] = 1
+                score_phi = score_phi/diag_resc.sqrt()
+
+            score_dict["phi"] = score_phi
+    
+        return score_dict
+
+        
+        
 

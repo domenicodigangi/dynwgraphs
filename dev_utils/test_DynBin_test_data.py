@@ -3,9 +3,11 @@
 
 """
 @author: Domenico Di Gangi,  <digangidomenico@gmail.com>
-Created on Saturday June 26th 2021
+Created on Saturday July 10th 2021
 
 """
+
+
 
 
 
@@ -16,8 +18,8 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import dynwgraphs
-from dynwgraphs.utils.tensortools import tens, splitVec
-from dynwgraphs.dirGraphs1_dynNets import  dirSpW1_sequence_ss, dirSpW1_SD
+from dynwgraphs.utils.tensortools import tens, splitVec, strIO_from_mat
+from dynwgraphs.dirGraphs1_dynNets import  dirBin1_sequence_ss, dirBin1_SD
 import importlib
 
 from torch.functional import split
@@ -32,20 +34,22 @@ X_T_test = X_T_matrix
 N, _, T = Y_T.shape
 
 #%% Test single snapshot estimates of  phi_t
-model = dirSpW1_sequence_ss(Y_T, X_T=X_T_test, size_beta_t=1, ovflw_lm=True, distr = 'gamma') # 'lognormal')
-model.opt_options_ss_t["max_opt_iter"] = 100
+model = dirBin1_sequence_ss(Y_T, X_T=X_T_test, size_beta_t=1, ovflw_lm=True) # 'lognormal')
+model.opt_options_ss_t["max_opt_iter"] = 50
 
+t=1
+model.check_exp_vals(t)
+model.estimate_ss_t(t, est_phi=True, est_beta = True, est_dist_par=True)
 
-model.estimate_ss_t(1, est_phi=True, est_beta = True, est_dist_par=False)
+model.check_exp_vals(t)
 model.get_seq_latent_par()
 
 
 #%% Test sequence of single snapshot estimates of  phi_T
-model = dirSpW1_sequence_ss(Y_T, X_T=X_T_test, ovflw_lm=True, distr = 'gamma', size_beta_t=1, beta_tv=[True, True]) # 'lognormal')
+model = dirBin1_sequence_ss(Y_T, X_T=X_T_test, ovflw_lm=True, distr = '', size_beta_t=1, beta_tv=[True, True]) # 'lognormal')
 model.opt_options_ss_seq["max_opt_iter"] = 10
 model.opt_options_ss_seq["opt_n"] = "ADAM"
 
-model.rescale_SD
 
 model.estimate_ss_seq_joint()
 model.get_seq_latent_par()
@@ -63,9 +67,9 @@ phi_t_identified, beta_id = model.identify_phi_io_beta(phi_t_identified, beta_t,
 
 
 #%% Test Score driven estimates of  phi_T
-model = dirSpW1_SD(Y_T, ovflw_lm=True, distr = 'gamma', rescale_SD=True) # 'lognormal')
+model = dirBin1_SD(Y_T, ovflw_lm=True, distr = 'gamma', rescale_SD=True) # 'lognormal')
 
-model = dirSpW1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], ovflw_lm=True, distr = 'gamma', rescale_SD=False) # 'lognormal')
+model = dirBin1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], ovflw_lm=True, distr = 'gamma', rescale_SD=False) # 'lognormal')
 
 model.opt_options_sd["max_opt_iter"] = 20
 model.opt_options_sd["opt_n"] = "ADAM"
@@ -75,6 +79,8 @@ model.opt_options_sd["opt_n"] = "ADAM"
 optimizer = model.estimate_sd()
 
 model.get_seq_latent_par()
+
+model.get_phi_T()
 
 model.get_unc_mean(model.sd_stat_par_un_phi)
 

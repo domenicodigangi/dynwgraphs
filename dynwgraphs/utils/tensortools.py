@@ -23,7 +23,10 @@ def splitVec(vec, N=None):
         return vec[:N, :], vec[N:2*N, :]
 
 def tens(x, dtype = torch.float32):
-    return torch.tensor(x, dtype=dtype)
+    if torch.is_tensor(x):
+        return x.to(dtype)
+    else:
+        return torch.tensor(x, dtype=dtype)
 
 def degIO_from_mat(Y):
     A =  ( Y > 0).int()
