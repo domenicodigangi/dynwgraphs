@@ -260,6 +260,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             else:
                 self.beta_T = [torch.zeros(size_beta_t, self.n_reg, requires_grad=True)]
 
+        self.optimized_once = False
+        
 
     def get_obs_t(self, t):
         Y_t = self.Y_T[:, :, t]
@@ -313,7 +315,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         else:
             beta_T_data = None
 
-        dist_par_un_T_data = torch.stack([p.data for p in self.dist_par_un_T], dim=1)
+        if self.dist_par_un_T is not None:
+            dist_par_un_T_data = torch.stack([p.data for p in self.dist_par_un_T], dim=1)
+        else:
+            dist_par_un_T_data = None
 
         return phi_T_data, dist_par_un_T_data, beta_T_data
 
@@ -377,8 +382,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         if est_phi:
             par_l_to_opt.append(phi_t)
         if est_dist_par:
+            if dist_par_un_t is None:
+                raise
             par_l_to_opt.append(dist_par_un_t)
         if est_beta:
+            if beta_t is None:
+                raise
             par_l_to_opt.append(beta_t)
 
         
@@ -450,14 +459,18 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.set_all_requires_grad(True)
 
-        self.init_phi_T_from_obs()
+        if not self.optimized_once:
+            self.init_phi_T_from_obs()
         
+        self.optimized_once = True
+
         def obj_fun():
             return  - self.loglike_seq_T()
   
         self.par_dict_to_opt = {}
         self.par_dict_to_opt["phi_T"] = self.phi_T
-        self.par_dict_to_opt["dist_par_un_T"] = self.dist_par_un_T
+        if self.dist_par_un_T is not None:
+            self.par_dict_to_opt["dist_par_un_T"] = self.dist_par_un_T
         if self.beta_T is not None:
             self.par_dict_to_opt["beta_T"] = self.beta_T
 
@@ -639,7 +652,8 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         if self.init_sd_type == "est_ss_before":
             # the inititial value of sd tv par is etimated beforehand on a single snapshot
-            self.estimate_ss_t(0, True, True, True)
+
+            self.estimate_ss_t(True, self.beta_T is not None, self.dist_par_un_T is not None)
                 
         def obj_fun():
             self.roll_sd_filt()
@@ -659,16 +673,17 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             par_l_to_opt.append(self.phi_T[0])
             self.par_dict_to_opt["phi"] = self.phi_T[0]
 
-        if self.dist_par_tv:
-            if self.init_sd_type == "est_ss_before":
-                par_to_exclude = ["init_val"]
-            else:
-                par_to_exclude = []
-            self.append_all_par_dict_to_list(self.sd_stat_par_un_dist_par_un, par_l_to_opt, keys_to_exclude=par_to_exclude)
+        if self.dist_par_un_T is not None:
+            if self.dist_par_tv:
+                if self.init_sd_type == "est_ss_before":
+                    par_to_exclude = ["init_val"]
+                else:
+                    par_to_exclude = []
+                self.append_all_par_dict_to_list(self.sd_stat_par_un_dist_par_un, par_l_to_opt, keys_to_exclude=par_to_exclude)
 
-        else:
-            par_l_to_opt.append(self.dist_par_un_T[0])
-            self.par_dict_to_opt["dist_par_un_T"] = self.dist_par_un_T[0]
+            else:
+                par_l_to_opt.append(self.dist_par_un_T[0])
+                self.par_dict_to_opt["dist_par_un_T"] = self.dist_par_un_T[0]
 
         if any(self.beta_tv):
             if self.init_sd_type == "est_ss_before":
@@ -901,7 +916,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
 
         Y_T = tens(Y_T > 0)
 
-        super(dirBin1_sequence_ss, self).__init__( Y_T, *args, distr = "bernoulli",   **kwargs)
+        super().__init__( Y_T, *args, distr = "bernoulli",   **kwargs)
   
     def invPiMat(self, phi, beta, X_t, ret_log=False):
         """
@@ -1060,12 +1075,11 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
     
 class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
-    def __init__(self, Y_T, X_T=None, phi_tv=True, ovflw_lm=True, distr='gamma',  size_dist_par_un_t = 1, dist_par_tv=False, size_beta_t = 1, beta_tv=[False], rescale_SD=True, init_sd_type = "unc_mean", data_name="", 
-            opt_options_sd = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}):
+    def __init__(self, Y_T, **kwargs): 
 
         Y_T = tens(Y_T > 0)
-        super().__init__( Y_T = Y_T, X_T=X_T, phi_tv=phi_tv, ovflw_lm=ovflw_lm, distr=distr,  size_dist_par_un_t=size_dist_par_un_t, dist_par_tv=dist_par_tv, size_beta_t=size_beta_t, beta_tv=beta_tv, data_name=data_name)
 
+        super().__init__( Y_T, **kwargs) 
   
     def score_t(self, t):
         Y_t, X_t = self.get_obs_t(t)
@@ -1076,7 +1090,7 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         A_t = tens(A_t_bool)
         
         score_dict = {}
-        if  any(self.beta_tv) | self.dist_par_tv:
+        if  any(self.beta_tv) :
             
             # compute the score with AD using Autograd
             like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t)
@@ -1097,7 +1111,7 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
                 diag_resc_mat = exp_A * (1 - exp_A)
 
             if self.ovflw_lm:
-                log_inv_pi__mat = self.invPiMat(phi_t, ret_log=True)
+                log_inv_pi__mat = self.invPiMat(phi_t, beta=beta_t, X_t=X_t, ret_log=True)
                 L = self.ovflw_exp_L_limit
                 U = self.ovflw_exp_U_limit
                 # multiply the score by the derivative of the overflow limit function

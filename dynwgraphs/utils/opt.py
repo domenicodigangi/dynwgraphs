@@ -110,11 +110,10 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     logger.info(f"starting optimization with {''.join([f'{key}:: {value}, ' for key, value in hparams_dict.items()])}")
 
     if tb_log_flag:
-        comment = run_name + "".join([f"_{k}_{v}" for k, v in hparams_dict.items()])
 
         full_name = Path(folder_name) 
 
-        writer = SummaryWriter(str(full_name), comment=comment)
+        writer = SummaryWriter(str(full_name))
 
     optimizer = optimizers[opt_n]
 
