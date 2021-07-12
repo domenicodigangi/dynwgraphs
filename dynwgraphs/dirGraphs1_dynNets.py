@@ -122,7 +122,7 @@ class dirGraphs_funs(nn.Module):
             #  putZeroDiag(torch.exp(log_Econd_mat))
 
     def identify_phi_io(self, phi):
-        """ enforce an identification condition on the phi parameters 
+        """ enforce an identification condition on the phi parameters for a single snapshot
         """
         # set the first in parameter to zero
         phi_i, phi_o = splitVec(phi)
@@ -141,7 +141,7 @@ class dirGraphs_funs(nn.Module):
         return torch.cat((phi_i_out, phi_o_out))
 
     def identify_phi_io_beta(self, phi, beta, x):
-        """ enforce an identification condition on the phi and beta parameters 
+        """ enforce an identification condition on the phi and beta parameters for a single snapshot, needed in case of uniform beta
         """
         # set the first in parameter to zero
         phi_i, phi_o = splitVec(phi)

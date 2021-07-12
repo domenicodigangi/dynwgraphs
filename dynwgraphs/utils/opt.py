@@ -82,6 +82,10 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     """given a function and a starting vector, run one of different pox optimizations"""
 
 
+    # do not log tensorboard data for opt runs that are clearly tests
+    if max_opt_iter <=10:
+        tb_log_flag = False
+
     {""}    
 
     if isinstance(unParIn, list):
