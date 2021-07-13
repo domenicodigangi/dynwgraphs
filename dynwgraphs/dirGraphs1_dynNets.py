@@ -20,6 +20,7 @@ import torch
 import sys
 import numpy as np
 import os
+import pickle
 from matplotlib import pyplot as plt
 from .utils.tensortools import splitVec, tens, putZeroDiag, putZeroDiag_T, soft_lu_bound, strIO_from_mat
 from .utils.opt import optim_torch
@@ -154,8 +155,6 @@ class dirGraphs_funs(nn.Module):
         # raise error for cases where the identification problem is not yet clear
         if beta.shape[0] >1 : 
             raise
-        if self.reg_cross_unique.sum() >1 : 
-            raise
         if beta.shape[1] >1:
             raise
 
@@ -197,17 +196,30 @@ class dirGraphs_funs(nn.Module):
     def check_exp_vals(self, t):
         pass
 
+    def str_from_dic(self, dict):
+        return ''.join([f'{key}={value}_' for key, value in dict.items()])
+
+    def file_names(self, save_path):
+        file_name_mod = save_path / f"{self.info_str()}_model.pkl"
+        file_name_par = save_path / f"{self.info_str()}_par.pkl"
+        return file_name_mod, file_name_par
+
+    def save_model(self, save_path):
+        file_name_mod, file_name_par = self.file_names(save_path)
+        pickle.dump(self, open(file_name_mod, "wb"))
+        pickle.dump(self.par_dict_to_save , open(file_name_par, "wb"))
+
 
 class dirGraphs_sequence_ss(dirGraphs_funs):
     """
     Single snapshot sequence of, binary or weighted, fitness models with external regressors. 
     """
 
-    _opt_options_ss_t_def = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}
-    _opt_options_ss_seq_def = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}
+    _opt_options_ss_t_def = {"opt_n" :"ADAM", "min_opt_iter" :50, "max_opt_iter" :1000, "lr" :0.01}
+    _opt_options_ss_seq_def = {"opt_n" :"ADAM", "min_opt_iter" :50, "max_opt_iter" :5000, "lr" :0.01}
 
     # set default init kwargs to be shared between binary and weighted models
-    def __init__(self, Y_T, X_T=None, phi_tv=True, phi_par_init="fast_mle", ovflw_lm=True, distr='',  phi_id_type="in_sum_zero", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = 1, beta_tv= tens([False]).bool(), data_name="", 
+    def __init__(self, Y_T, X_T=None, phi_tv=True, phi_par_init="fast_mle", ovflw_lm=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = 1, beta_tv= tens([False]).bool(), data_name="", 
             opt_options_ss_t = _opt_options_ss_t_def, 
             opt_options_ss_seq = _opt_options_ss_seq_def):
 
@@ -223,14 +235,16 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         else:
             self.n_reg = X_T.shape[2]
 
-        self.reg_cross_unique = self.check_regressors_cross_uniqueness()
-        self.id_phi_beta_required = False#any(self.reg_cross_unique) and any(beta_tv)
-        self.phi_tv = phi_tv
         self.phi_par_init = phi_par_init
         self.dist_par_tv = dist_par_tv
         self.beta_tv = beta_tv
         self.n_beta_tv = sum(beta_tv)
+        self.phi_tv = phi_tv
 
+        self.reg_cross_unique = self.check_regressors_cross_uniqueness()
+        self.identification_type = ""
+        self.check_id_required()
+        
         self.opt_options_ss_t = opt_options_ss_t
         self.opt_options_ss_seq = opt_options_ss_seq
         
@@ -322,16 +336,66 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         return phi_T_data, dist_par_un_T_data, beta_T_data
 
-    def identify_sequence(self):    
+    def check_id_required(self):
+
+        if any(self.reg_cross_unique):
+            if sum(self.reg_cross_unique) >1 :
+                raise
+            if any(self.beta_tv):
+                if sum(self.beta_tv) >1 :
+                    raise
+                if self.reg_cross_unique[self.beta_tv]:
+                    # tv beta for uniform regressor
+                    self.identification_type = "phi_t_beta_t"#
+                else:
+                    raise # to be checked
+                    self.identification_type = "phi_t"#
+
+            else:
+                #constant beta for uniform regressor
+                self.identification_type = "phi_t_beta_const"#
+        else:
+            self.identification_type = "phi_t"#
+        
+
+    def shift_sequence_phi_o_T_beta_const(self, c, x_T):    
+        beta_t_all = self.beta_T[0].clone()
+        beta_t_all[:, self.reg_cross_unique] = beta_t_all[:,self.reg_cross_unique] + c
+        self.beta_T[0] = beta_t_all
+        
         for t in range(self.T):
             phi_t = self.phi_T[t][:]
-            phi_t_identified = self.identify_phi_io(phi_t)
-            if self.id_phi_beta_required:
+            phi_i, phi_o = splitVec(phi_t)
+            phi_o = phi_o - c * x_T[t]
+            self.phi_T[t] = torch.cat((phi_i, phi_o))
+            
+
+    def identify_sequence(self):    
+        for t in range(self.T):
+            #as first step, identify phi_io
+            phi_t = self.phi_T[t][:]
+            phi_t_id_0 = self.identify_phi_io(phi_t)
+            
+            if self.identification_type == "phi_t_beta_t":
                 beta_t = self.beta_T[t][:, self.reg_cross_unique]
                 x_t = self.X_T[0, 0, self.reg_cross_unique, t]
-                self.phi_T[t][:], self.beta_T[t][:, self.reg_cross_unique] = self.identify_phi_io_beta(phi_t_identified, beta_t, x_t )    
-            else:
-                self.phi_T[t] = phi_t_identified
+                self.phi_T[t][:], self.beta_T[t][:, self.reg_cross_unique] = self.identify_phi_io_beta(phi_t_id_0, beta_t, x_t )    
+            else:    
+                self.phi_T[t] = phi_t_id_0
+    
+        if self.identification_type == "phi_t_beta_const":
+            phi_o_T_sum = sum([phi[self.N:].mean() for phi in self.phi_T ])
+            if sum(self.reg_cross_unique) > 1:
+                raise
+            x_T = self.X_T[0, 0, self.reg_cross_unique, :].squeeze()
+            x_T_sum = x_T.sum()
+            c =(- self.beta_T[0][0]  + 1) # phi_o_T_sum/x_T_sum
+
+            if len(self.beta_T)>1:
+                raise
+
+            self.shift_sequence_phi_o_T_beta_const(c, x_T)
+
 
     def check_regressors_seq_shape(self):
         """
@@ -399,7 +463,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         hparams_dict = {"est_phi" :est_phi, "est_dist_par" :est_dist_par, "est_beta" :est_beta}
 
-        optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_ss_t["max_opt_iter"], opt_n=self.opt_options_ss_t["opt_n"], lr=self.opt_options_ss_t["lr"], min_opt_iter=self.opt_options_ss_t["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in=hparams_dict)
+        optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_ss_t["max_opt_iter"], opt_n=self.opt_options_ss_t["opt_n"], lr=self.opt_options_ss_t["lr"], min_opt_iter=self.opt_options_ss_t["min_opt_iter"], run_name=run_name, tb_log_flag=False, log_info=False, hparams_dict_in=hparams_dict)
 
     def loglike_seq_T(self):
         loglike_T = 0
@@ -417,13 +481,15 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             for t in range(self.T):
                 if self.phi_par_init == "fast_mle":
                     Y_t, _ = self.get_obs_t(t)
-                    self.phi_T[t] = torch.nn.Parameter(self.start_phi_from_obs(Y_t))
+                    self.phi_T[t] = self.start_phi_from_obs(Y_t)
                 elif self.phi_par_init == "rand":
                     self.phi_T[t] = torch.rand(self.phi_T[t].shape)
                 elif self.phi_par_init == "zeros":
                     self.phi_T[t] = torch.zeros(self.phi_T[t].shape)           
         else:
             raise
+
+        self.identify_sequence()
 
     def plot_phi_T(self, x=None):
         if x is None:
@@ -467,12 +533,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         def obj_fun():
             return  - self.loglike_seq_T()
   
-        self.par_dict_to_opt = {}
-        self.par_dict_to_opt["phi_T"] = self.phi_T
+        self.par_dict_to_save = {}
+        self.par_dict_to_save["phi_T"] = self.phi_T
         if self.dist_par_un_T is not None:
-            self.par_dict_to_opt["dist_par_un_T"] = self.dist_par_un_T
+            self.par_dict_to_save["dist_par_un_T"] = self.dist_par_un_T
         if self.beta_T is not None:
-            self.par_dict_to_opt["beta_T"] = self.beta_T
+            self.par_dict_to_save["beta_T"] = self.beta_T
 
       
         run_name = f"{self.data_name}_SequenceSingleSnap"
@@ -480,12 +546,24 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         hparams_dict = {"phi_tv" :self.phi_tv, "dist_par_tv" :self.dist_par_tv, "beta_tv" :tens(self.beta_tv), "phi_par_init" :self.phi_par_init}
 
         par_l_to_opt = []
-        for l in self.par_dict_to_opt.values():
+        for l in self.par_dict_to_save.values():
             par_l_to_opt.extend(l)
 
         optim_torch(obj_fun, par_l_to_opt, max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], min_opt_iter=self.opt_options_ss_seq["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = hparams_dict)
 
         self.identify_sequence()
+
+    def info_tv_par(self):
+        return f"phi_tv_{self.phi_tv}_size_par_dist_{self.size_dist_par_un_t}_tv_{self.dist_par_tv}_size_beta_{self.size_beta_t}_tv_{self.beta_tv}_"
+
+    def info_opt_par(self):
+        return self.str_from_dic(self.opt_options_ss_seq)
+
+    def info_model(self):
+        return  f"ss_"
+
+    def info_str(self):
+        return self.info_model() + self.info_tv_par() + self.info_opt_par()
 
 
 class dirGraphs_SD(dirGraphs_sequence_ss):
@@ -495,7 +573,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         init_sd_type : "unc_mean", "est_joint", "est_ss_before"
     """
 
-    __opt_options_sd_def = {"opt_n" :"ADAM", "min_opt_iter" :200, "max_opt_iter" :5000, "lr" :0.01}
+    __opt_options_sd_def = {"opt_n" :"ADAM", "min_opt_iter" :50, "max_opt_iter" :3500, "lr" :0.01}
 
     def __init__(self, *args, init_sd_type = "unc_mean", rescale_SD = False, opt_options_sd = __opt_options_sd_def, **kwargs ):
 
@@ -523,7 +601,19 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
                 if not all(self.beta_tv):
                     raise
 
-            
+
+
+    def check_id_required(self):
+
+        if any(self.reg_cross_unique):
+            if sum(self.reg_cross_unique) >1 :
+                raise
+            if any(self.beta_tv):
+                if sum(self.beta_tv) >1 :
+                    raise
+                
+        self.identification_type = "phi_t"#
+        
     def define_stat_un_sd_par_dict(self, n_sd_par):
 
         sd_stat_par_dict = {"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*self.B0),"A" :nn.Parameter(torch.ones(n_sd_par)*self.A0)}
@@ -612,6 +702,11 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         return w/(1-B)
         
+    def set_unc_mean(self, unc_mean, sd_stat_par_un):
+        B = self.un2re_B_par(sd_stat_par_un["B"])  
+        w_implied_by_unc_mean = (1-B) * unc_mean 
+        sd_stat_par_un["w"] = nn.parameter.Parameter(w_implied_by_unc_mean, requires_grad=True)
+        
     def roll_sd_filt(self):
 
         """Use the static parameters and the observations, that are attributes of the class, to fiter, and update, the dynamical parameters with  score driven dynamics.
@@ -644,38 +739,58 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if k not in keys_to_exclude:
                 par_list.append(v)
 
+    def init_static_sd_from_obs(self):
+       pass
+
+    def info_model(self):
+        return f"sd_init_{self.init_sd_type}_resc_{self.rescale_SD}_"
+
+    def info_opt_par(self):
+        return self.str_from_dic(self.opt_options_sd)
+
+ 
+
+
     def estimate_sd(self, tb_log_flag=True):
 
         self.run_checks()
 
-        self.set_all_requires_grad(True)
-        
+
+        if not self.optimized_once:
+            self.init_static_sd_from_obs()
+        self.optimized_once = True
+
         if self.init_sd_type == "est_ss_before":
             # the inititial value of sd tv par is etimated beforehand on a single snapshot
 
-            self.estimate_ss_t(True, self.beta_T is not None, self.dist_par_un_T is not None)
+            self.estimate_ss_t(0, True, self.beta_T is not None, self.dist_par_un_T is not None)
                 
         def obj_fun():
             self.roll_sd_filt()
             return - self.loglike_seq_T()
   
         # dict define for consistency with non sd version
-        self.par_dict_to_opt = self.state_dict()
+        self.par_dict_to_save = {}
+        # define list of parameters to be optimized
         par_l_to_opt = [] 
+
         
         if self.phi_tv:
-            if self.init_sd_type == "est_ss_before":
+            self.par_dict_to_save["sd_stat_par_un_phi"] = self.sd_stat_par_un_phi
+            if self.init_sd_type in ["est_ss_before", "unc_mean"]:
                 par_to_exclude = ["init_val"]
             else:
                 par_to_exclude = []
             self.append_all_par_dict_to_list(self.sd_stat_par_un_phi, par_l_to_opt, keys_to_exclude=par_to_exclude)
         else:
             par_l_to_opt.append(self.phi_T[0])
-            self.par_dict_to_opt["phi"] = self.phi_T[0]
+            self.par_dict_to_save["phi"] = self.phi_T[0]
 
         if self.dist_par_un_T is not None:
             if self.dist_par_tv:
-                if self.init_sd_type == "est_ss_before":
+                self.par_dict_to_save["sd_stat_par_un_dist_par_un"] = self.sd_stat_par_un_dist_par_un
+
+                if self.init_sd_type in ["est_ss_before", "unc_mean"]:
                     par_to_exclude = ["init_val"]
                 else:
                     par_to_exclude = []
@@ -683,10 +798,12 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
             else:
                 par_l_to_opt.append(self.dist_par_un_T[0])
-                self.par_dict_to_opt["dist_par_un_T"] = self.dist_par_un_T[0]
+                self.par_dict_to_save["dist_par_un"] = self.dist_par_un_T[0]
 
         if any(self.beta_tv):
-            if self.init_sd_type == "est_ss_before":
+            self.par_dict_to_save["sd_stat_par_un_beta"] = self.sd_stat_par_un_beta
+            
+            if self.init_sd_type in ["est_ss_before", "unc_mean"]:
                 par_to_exclude = ["init_val"]
             else:
                 par_to_exclude = []
@@ -694,7 +811,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             
         elif self.beta_T is not None:
             par_l_to_opt.append(self.beta_T[0])
-            self.par_dict_to_opt["beta_T"] = self.beta_T[0]
+            self.par_dict_to_save["beta"] = self.beta_T[0]
 
 
         
@@ -834,7 +951,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         A_t=putZeroDiag(Y_t)>0
         return torch.sum(Y_t[A_t])/torch.sum(EYcond_mat[A_t]), torch.mean(Y_t[A_t]/EYcond_mat[A_t])
 
-    
+
 class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
     def __init__(self, *args, **kwargs):
@@ -906,6 +1023,16 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
             score_dict["phi"] = score_phi
 
         return score_dict
+
+    def init_static_sd_from_obs(self):
+        T_init = 5
+        for t in range(T_init):
+            self.estimate_ss_t(t, True, True, False)
+        phi_T, dist_par_un_T, beta_T = self.get_seq_latent_par()
+        if self.phi_tv:
+            phi_unc_mean_0 = phi_T[:, :T_init].mean(dim=1) 
+            self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
+
 
 # Binary Graphs
 
@@ -1131,7 +1258,13 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
             score_dict["phi"] = score_phi
     
         return score_dict
+        
+    def init_static_sd_from_obs(self):
+        self.init_phi_T_from_obs()
+        phi_T, dist_par_un_T, beta_T = self.get_seq_latent_par()
+        if self.phi_tv:
+            phi_unc_mean_0 = phi_T.mean(dim=1) 
+            self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
 
-        
-        
+
 

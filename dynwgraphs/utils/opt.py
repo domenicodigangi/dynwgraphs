@@ -78,7 +78,7 @@ def grad_norm_from_list(par_list):
         total_norm = torch.norm(torch.stack([torch.linalg.norm(p.grad.detach()).to(device) for p in parameters]), 2.0).item()
     return total_norm
 
-def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=50, min_opt_iter=250, bandwidth=250, small_grad_th=1e-6, folder_name="runs", run_name=None, tb_log_flag=True, hparams_dict_in=None):
+def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=50, min_opt_iter=250, bandwidth=250, small_grad_th=1e-6, folder_name="runs", run_name=None, tb_log_flag=True, hparams_dict_in=None, log_info=True):
     """given a function and a starting vector, run one of different pox optimizations"""
 
 
@@ -103,7 +103,6 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
                   "NESTEROV_1" : torch.optim.SGD(unPar, lr=lr, momentum=0.5, nesterov=True),
                   "NESTEROV_2" : torch.optim.SGD(unPar, lr=lr, momentum=0.7, nesterov=True),
                   "LBFGS" : torch.optim.LBFGS(unPar, lr=lr),
-                  "LBFGS_NEW" : LBFGSNew(unPar, lr=lr, line_search_fn = True),
                   "ADAHESSIAN" : Adahessian(unPar, lr=lr,  betas= (0.9, 0.999), weight_decay=0)}
 
     hparams_dict = {"optimizer" :opt_n,  "lr" :lr, "max_opt_iter" :max_opt_iter, "rel_improv_tol" :rel_improv_tol, "no_improv_max_count" :no_improv_max_count,  "min_opt_iter" :min_opt_iter, "bandwidth" :bandwidth, "n_learned_par" :sum((p.numel() for p in unPar))}
@@ -180,7 +179,8 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
             writer.add_scalar('Loss/roll_avg_rel_improv', roll_rel_im, n_iter)
             writer.add_scalar('Loss/roll_avg_rel_improv', grad_norm, n_iter)
 
-        logger.info(f" iter {n_iter}, g_norm {'{:.3e}'.format(grad_norm)}, roll rel impr { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
+        if log_info:
+            logger.info(f" iter {n_iter}, g_norm {'{:.3e}'.format(grad_norm)}, roll rel impr { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
 
     final_loss = closure()
     logger.info(f"final loss {final_loss.item()}")
