@@ -32,7 +32,7 @@ X_T_test = X_T_matrix
 N, _, T = Y_T.shape
 
 #%% Test single snapshot estimates of  phi_t
-model = dirSpW1_sequence_ss(Y_T, X_T=X_T_test, size_beta_t=1, ovflw_lm=True, distr = 'gamma') # 'lognormal')
+model = dirSpW1_sequence_ss(Y_T, X_T=X_T_test, size_beta_t=1, avoid_ovflw_fun_flag=True, distr = 'gamma') # 'lognormal')
 model.opt_options_ss_t["max_opt_iter"] = 100
 
 
@@ -41,7 +41,7 @@ model.get_seq_latent_par()
 
 
 #%% Test sequence of single snapshot estimates of  phi_T
-model = dirSpW1_sequence_ss(Y_T, X_T=X_T_test, ovflw_lm=True, distr = 'gamma', size_beta_t=1, beta_tv=[True, True]) # 'lognormal')
+model = dirSpW1_sequence_ss(Y_T, X_T=X_T_test, avoid_ovflw_fun_flag=True, distr = 'gamma', size_beta_t=1, beta_tv=[True, True]) # 'lognormal')
 model.opt_options_ss_seq["max_opt_iter"] = 10
 model.opt_options_ss_seq["opt_n"] = "ADAM"
 
@@ -63,9 +63,9 @@ phi_t_identified, beta_id = model.identify_phi_io_beta(phi_t_identified, beta_t,
 
 
 #%% Test Score driven estimates of  phi_T
-model = dirSpW1_SD(Y_T, ovflw_lm=True, distr = 'gamma', rescale_SD=True) # 'lognormal')
+model = dirSpW1_SD(Y_T, avoid_ovflw_fun_flag=True, distr = 'gamma', rescale_SD=True) # 'lognormal')
 
-model = dirSpW1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], ovflw_lm=True, distr = 'gamma', rescale_SD=False) # 'lognormal')
+model = dirSpW1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], avoid_ovflw_fun_flag=True, distr = 'gamma', rescale_SD=False) # 'lognormal')
 
 model.opt_options_sd["max_opt_iter"] = 20
 model.opt_options_sd["opt_n"] = "ADAM"

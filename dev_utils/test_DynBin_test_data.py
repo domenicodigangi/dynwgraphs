@@ -34,7 +34,7 @@ X_T_test = X_T_matrix
 N, _, T = Y_T.shape
 
 #%% Test single snapshot estimates of  phi_t
-model = dirBin1_sequence_ss(Y_T, X_T=X_T_test, size_beta_t=1, ovflw_lm=True) # 'lognormal')
+model = dirBin1_sequence_ss(Y_T, X_T=X_T_test, size_beta_t=1, avoid_ovflw_fun_flag=True) # 'lognormal')
 model.opt_options_ss_t["max_opt_iter"] = 50
 
 t=1
@@ -46,7 +46,7 @@ model.get_seq_latent_par()
 
 
 #%% Test sequence of single snapshot estimates of  phi_T
-model = dirBin1_sequence_ss(Y_T, X_T=X_T_test, ovflw_lm=True, size_beta_t=1, beta_tv=[True, True]) # 'lognormal')
+model = dirBin1_sequence_ss(Y_T, X_T=X_T_test, avoid_ovflw_fun_flag=True, size_beta_t=1, beta_tv=[True, True]) # 'lognormal')
 model.opt_options_ss_seq["max_opt_iter"] = 20
 model.opt_options_ss_seq["opt_n"] = "LBFGS"
 
@@ -67,9 +67,9 @@ phi_t_identified, beta_id = model.identify_phi_io_beta(phi_t_identified, beta_t,
 
 
 #%% Test Score driven estimates of  phi_T
-model = dirBin1_SD(Y_T, ovflw_lm=True, rescale_SD=True) # 'lognormal')
+model = dirBin1_SD(Y_T, avoid_ovflw_fun_flag=True, rescale_SD=True) # 'lognormal')
 
-model = dirBin1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], ovflw_lm=True, rescale_SD=False) # 'lognormal')
+model = dirBin1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], avoid_ovflw_fun_flag=True, rescale_SD=False) # 'lognormal')
 
 model.opt_options_sd["max_opt_iter"] = 20
 model.opt_options_sd["opt_n"] = "ADAM"
@@ -91,6 +91,39 @@ model.plot_phi_T()
 
 model.un2re_A_par(model.sd_un_phi["A"])
 model.un2re_B_par(model.sd_un_phi["B"])
+
+
+# %% Test sampling of dgp
+
+from dynwgraphs.utils.dgps import get_test_w_seq
+Y_T_test, _, _ =  get_test_w_seq(avg_weight=1e3)
+
+N = 50
+T = 100
+B = 0.98
+sigma = 0.1
+
+mod_dgp = dirBin1_SD(torch.zeros(N,N,T)) 
+
+Y = (Y_T_test[:,:,0]>0).float()
+phi_0 = mod_dgp.start_phi_from_obs(Y)
+mod_dgp.phi_T = mod_dgp.sample_phi_dgp_ar(phi_0, B, sigma, T)
+Y_T_sampled = mod_dgp.sample_mats_from_par_lists(T, mod_dgp.phi_T)
+
+
+
+mod_est = dirBin1_SD(Y_T_sampled)
+mod_est_ = dirBin1_SD(Y_T_sampled)
+mod_est_.init_phi_T_from_obs()
+
+mod_est.estimate_sd()
+
+i=11
+mod_dgp.plot_phi_T(i=i)
+mod_est.plot_phi_T(i=i)
+mod_est_.plot_phi_T(i=i)
+
+mod_est.plot_sd_par()
 
 
 # %%

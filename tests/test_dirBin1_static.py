@@ -27,7 +27,7 @@ X_T = tens(test_data["X_T"])
 #%% Test single snapshot estimates of  phi
 t=0
 Y_t = Y_T[:, :, t]
-model = dirBin1_dynNet_SD(ovflw_lm=False)
+model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=False)
 model.distr = 'bernoulli'
 phi_0 = model.start_phi_from_obs(Y_t, n_iter = 30)
 phi_0 = model.identify(phi_0)
@@ -50,7 +50,7 @@ phi_ss_t, diag_iter =  model.estimate_ss_t(Y_t, phi_0=phi_0, plot_flag=False, pr
 print(model.check_tot_exp(Y_t, phi_ss_t) )
 
 #%% test quick ss estimate
-model = dirBin1_dynNet_SD(ovflw_lm=False, rescale_SD = False )
+model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=False, rescale_SD = False )
 degIO = strIO_from_mat(Y_t)
 
 phi_t, diag = model.estimate_ss_t_bin_from_degIO(degIO, min_opt_iter=500,
@@ -69,7 +69,7 @@ par_ss_t, diag = model.estimate_ss_t( Y_t, X_t=X_t, beta_t=None, phi_0=None, dis
                                         max_opt_iter=50, print_flag=True)
 
 #%% test estimate of sequence of phi given static beta
-model = dirBin1_staNet(ovflw_lm=True)
+model = dirBin1_staNet(avoid_ovflw_fun_flag=True)
 dim_beta = N
 n_reg = X_T.shape[2]
 beta = torch.ones(dim_beta, n_reg) * 1
@@ -80,7 +80,7 @@ all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=X_T_multi, beta=beta, phi_T_0=Non
 
 plt.plot(diag_T)
 #%% test estimate of beta constant given phi_T
-model = dirBin1_staNet(ovflw_lm=True)
+model = dirBin1_staNet(avoid_ovflw_fun_flag=True)
 all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=None, beta=None, phi_T_0=None,
                                          est_beta=False,
                                         max_opt_iter=4, opt_n=1, lr=0.01,
@@ -88,13 +88,13 @@ all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=None, beta=None, phi_T_0=None,
 
 phi_ss_est_T = all_par_est_T[:2*N, :]
 dim_beta = 1
-model = dirBin1_dynNet_SD(ovflw_lm=True  )
+model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True  )
 beta_t_est, diag_beta_t = model.estimate_beta_const_given_phi_T(Y_T, X_T_multi, phi_ss_est_T.clone().detach(),
                                                                   dim_beta=dim_beta, dist_par_un=0,
                                                                   max_opt_iter=10, print_flag=True, plot_flag=True)
 
 #%% test estimate of beta and phi_T
-model = dirBin1_dynNet_SD(ovflw_lm=True  )
+model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True  )
 phi_T, dist_par_un, beta, diag = \
 model.ss_filt_est_beta_const(Y_T, X_T=X_T_multi, beta=None, phi_T=None,
                                       est_const_beta=True, dim_beta=1,
@@ -121,7 +121,7 @@ wI, wO = 1 + torch.randn(N), torch.randn(N)
 W = torch.cat((torch.ones(N) * wI, torch.ones(N) * wO)) * 0.001
 
 #%% Test score
-model = dirBin1_dynNet_SD(ovflw_lm=True, rescale_SD=True)
+model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD=True)
 s_1 = model.score_t(Y_t, W, backprop_score=True, like_type=2)
 s_2 = model.score_t(Y_t, W, backprop_score=False, like_type=2)
 
@@ -134,7 +134,7 @@ model.check_tot_exp(Y_t, model.start_phi_form_obs(Y_t), one_dim_out=False)
 
 
 #%% Tet score driven estimates
-model = dirBin1_dynNet_SD(ovflw_lm=True, rescale_SD=False)
+model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD=False)
 W_est, B_est, A_est, diag = model.estimate_SD(Y_T, B0=B, A0=A, W0=W, max_opt_iter=20, lr=0.01,
                                                 dim_dist_par_un=1, print_flag=True, plot_flag=False,
                                                                  est_dis_par_un=False)
@@ -145,7 +145,7 @@ n_reg=X_T_multi.shape[2]
 n_beta_tv = 0
 dim_dist_par_un = N
 
-model = dirBin1_dynNet_SD(ovflw_lm=True, rescale_SD = False )
+model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD = False )
 W_est, B_est, A_est, dist_par_un_est, beta_const_est,  diag = model.estimate_SD_X0(Y_T, X_T=X_T_multi,
                                                                 dim_beta=dim_beta,
                                                                 n_beta_tv = n_beta_tv,
@@ -160,7 +160,7 @@ W_est, B_est, A_est, dist_par_un_est, beta_const_est,  diag = model.estimate_SD_
 
 
 #%% Test sd dgp with time varying regressors
-model = dirBin1_dynNet_SD(ovflw_lm=True, rescale_SD=False)
+model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD=False)
 N = 30
 T = 100
 N_max_opt_iter_max = 10000
@@ -209,7 +209,7 @@ T = 100
 N_sample = 10
 
 
-model = dirBin1_dynNet_SD(ovflw_lm=True, rescale_SD=False)
+model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD=False)
 degb = tens([10, N-10])
 um_phi, um_degs = model.dgp_phi_var_size(N, degMin=degb[0], degMax=degb[1])
 

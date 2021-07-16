@@ -53,9 +53,9 @@ import click
 @click.option("--ovflw-lm", default=True, type=bool)
 @click.option("--distr", default="gamma", type=str)
 
-def sample_and_estimate(n_sample, max_opt_iter, ovflw_lm, distr):
+def sample_and_estimate(n_sample, max_opt_iter, avoid_ovflw_fun_flag, distr):
 
-    model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, distr = distr)
+    model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr = distr)
 
     mlflow.log_metric("N", Y_t.shape[0])
 

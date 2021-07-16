@@ -78,7 +78,7 @@ def grad_norm_from_list(par_list):
         total_norm = torch.norm(torch.stack([torch.linalg.norm(p.grad.detach()).to(device) for p in parameters]), 2.0).item()
     return total_norm
 
-def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=50, min_opt_iter=250, bandwidth=250, small_grad_th=1e-6, folder_name="runs", run_name=None, tb_log_flag=True, hparams_dict_in=None, log_info=True):
+def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, folder_name="runs", run_name=None, tb_log_flag=True, hparams_dict_in=None, log_info=True):
     """given a function and a starting vector, run one of different pox optimizations"""
 
 
@@ -112,6 +112,8 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
 
     logger.info(f"starting optimization with {''.join([f'{key}:: {value}, ' for key, value in hparams_dict.items()])}")
 
+    logger.info(f"initial f val = {obj_fun_()}")
+
     if tb_log_flag:
 
         full_name = Path(folder_name) 
@@ -129,7 +131,6 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
         else:
             loss.backward()
         return loss
-
 
     last_print_it=0
     diag = []
@@ -182,6 +183,9 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
         if log_info:
             logger.info(f" iter {n_iter}, g_norm {'{:.3e}'.format(grad_norm)}, roll rel impr { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
 
+
+    hparams_dict["actual_opt_iter"]= n_iter
+
     final_loss = closure()
     logger.info(f"final loss {final_loss.item()}")
     if tb_log_flag:
@@ -191,7 +195,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
         writer.flush()
         writer.close()
 
-    return optimizer
+    return optimizer, hparams_dict
 
 
 

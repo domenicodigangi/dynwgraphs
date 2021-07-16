@@ -49,18 +49,18 @@ X_T_multi[:, :, 1, :] += 1
 
 
 #%% Test single snapshot estimates of  phi_t
-model = dirSpW1_sequence_ss(Y_T, ovflw_lm=True, distr = 'gamma') # 'lognormal')
+model = dirSpW1_sequence_ss(Y_T, avoid_ovflw_fun_flag=True, distr = 'gamma') # 'lognormal')
 beta_t = torch.zeros(N)
 model.estimate_ss_t(t, est_phi=True, est_beta = False, est_dist_par=False)
 
 #%% Test sequence of single snapshot estimates of  phi_T
-model = dirSpW1_sequence_ss(Y_T, ovflw_lm=True, distr = 'gamma') # 'lognormal')
+model = dirSpW1_sequence_ss(Y_T, avoid_ovflw_fun_flag=True, distr = 'gamma') # 'lognormal')
 beta_t = torch.zeros(N)
 model.estimate_ss_seq_joint()
 
 
 #%% Test starting points for phi
-model = dirSpW1_sequence_ss(Y_T, ovflw_lm=True, distr = 'gamma')
+model = dirSpW1_sequence_ss(Y_T, avoid_ovflw_fun_flag=True, distr = 'gamma')
 beta_X = (None, None)
 phi_0 = model.start_phi_from_obs(Y_t)
 model.cond_exp_Y(phi_0, *beta_X)
@@ -105,7 +105,7 @@ par_ss_t, diag = model.estimate_ss_t( Y_t, X_t=X_t, beta_t=None, phi_0=None, dis
                                         max_opt_iter=50, print_flag=True)
 
 #%% test estimate of sequence of phi given static diss par
-model = dirSpW1_staNet(ovflw_lm=True  )
+model = dirSpW1_staNet(avoid_ovflw_fun_flag=True  )
 dim_dist_par_un = N
 phi_T_0 = model.start_phi_from_obs_T(Y_T)
 dist_par_un = model.dist_par_un_start_val(dim_dist_par_un)
@@ -114,7 +114,7 @@ all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=None, beta=None, phi_T_0=phi_T_0,
                                         max_opt_iter=4, opt_n=1, lr=0.01,
                                         print_flag=True, plot_flag=False, print_every=1)
 #%% test estimate of sequence of phi given static diss par and static beta
-model = dirSpW1_staNet(ovflw_lm=True  )
+model = dirSpW1_staNet(avoid_ovflw_fun_flag=True  )
 dim_dist_par_un = N
 dist_par_un = model.dist_par_un_start_val(dim_dist_par_un)
 dim_beta = N
@@ -130,7 +130,7 @@ all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=X_T_multi, beta=beta, phi_T_0=phi
 
 
 #%% Tests joint estimate of const betas
-model = dirSpW1_staNet(ovflw_lm=True  )
+model = dirSpW1_staNet(avoid_ovflw_fun_flag=True  )
 dim_dist_par_un = N
 dist_par_un = model.dist_par_un_start_val(dim_dist_par_un)
 all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=None, beta=None, phi_T_0=None, dist_par_un=dist_par_un,
@@ -141,13 +141,13 @@ all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=None, beta=None, phi_T_0=None, di
 phi_ss_est_T = all_par_est_T[:2*N,:]
 # test estimate of beta_t given phi_T and dist_par
 dim_beta = 1
-model = dirSpW1_dynNet_SD(ovflw_lm=True  )
+model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True  )
 beta_t_est, diag_beta_t = model.estimate_beta_const_given_phi_T(Y_T, X_T_multi, phi_ss_est_T,
                                                                   dim_beta=dim_beta, dist_par_un=dist_par_un,
                                                                   max_opt_iter=10, print_flag=True, plot_flag=True)
 
 #%% test estimate of  phi_T and constant beta and distr_par
-model = dirSpW1_dynNet_SD(ovflw_lm=True  )
+model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True  )
 phi_T, dist_par_un, beta, diag = \
 model.ss_filt_est_beta_dist_par_const(Y_T, X_T=X_T_multi, beta=None, phi_T=None, dist_par_un=None, like_type=2,
                                       est_const_dist_par=True, dim_dist_par_un=1,
@@ -163,7 +163,7 @@ model.ss_filt_est_beta_dist_par_const(Y_T, X_T=X_T_multi, beta=None, phi_T=None,
 plt.close("all")
 plt.plot(-np.array(diag))
 
-model_reg = dirSpW1_dynNet_SD(ovflw_lm=True)
+model_reg = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True)
 beta_t = -torch.ones(dim_beta,2)
 beta_t[0,0] = 100
 model_reg.regr_product(beta_t, X_T_multi[:,:,:,t])
@@ -196,7 +196,7 @@ A = torch.cat([torch.ones(N_BA) * 0.01, torch.ones(N_BA) * 0.01])
 wI, wO = 1 + torch.randn(N), torch.randn(N)
 W = torch.cat((torch.ones(N) * wI, torch.ones(N) * wO)) * 0.001
 #%% test score
-model = dirSpW1_dynNet_SD(ovflw_lm=True, rescale_SD = False)
+model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD = False)
 model.distr = 'gamma'
 
 phi_t = W
@@ -214,7 +214,7 @@ print((s_t-s_t_ad).abs().mean().item())#, ((s_t-s_t_ad)/s_t_ad)[s_t_ad>0].abs().
 (s_t-s_t_ad).abs()
 
 #%%  Test overflow limitations
-model = dirSpW1_dynNet_SD(ovflw_lm=True  )
+model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True  )
 model.loglike_sd_filt(W, B, A, Y_T, beta_const=None, X_T = None, dist_par_un=torch.ones(1))
 model.loglike_sd_filt(W, B, A, Y_T, beta_const=None, X_T = None, dist_par_un=torch.ones(1))
 
@@ -254,7 +254,7 @@ out = tmp + tmp1 + tmp2 + tmp3
 
 #%% Tet score driven estimates
 import utils
-model = dirSpW1_dynNet_SD(ovflw_lm=True, rescale_SD = False )
+model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD = False )
 model.backprop_sd = False
 
 utils.tic()
@@ -267,7 +267,7 @@ utils.toc()
 
 #%% Test SD loglike speed
 import time
-model = dirSpW1_dynNet_SD(ovflw_lm=True, rescale_SD = False )
+model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD = False )
 model.distr = 'gamma'
 model.backprop_sd = True
 %timeit model.sd_filt(W, B, A, Y_T)
@@ -279,7 +279,7 @@ n_reg=X_T_multi.shape[2]
 n_beta_tv = 0
 dim_dist_par_un = 1
 
-model = dirSpW1_dynNet_SD(ovflw_lm=True, rescale_SD = False )
+model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD = False )
 model.distr = 'lognormal'
 W_est, B_est, A_est, dist_par_un_est, beta_const_est, sd_par_0,  diag = model.estimate_SD_X0(Y_T, X_T=X_T_multi,
                                                                 dim_beta=dim_beta,
@@ -300,7 +300,7 @@ n_reg=X_T_multi.shape[2]
 n_beta_tv = 1
 dim_dist_par_un = N
 
-model = dirSpW1_dynNet_SD(ovflw_lm=True, rescale_SD = False )
+model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD = False )
 model.distr = 'lognormal'
 W_est, B_est, A_est, dist_par_un_est, beta_const_est, sd_par_0,  diag = model.estimate_SD_X0(Y_T, X_T=X_T_multi,
                                                                 dim_beta=dim_beta,

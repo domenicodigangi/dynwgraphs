@@ -18,8 +18,8 @@ from .dirSpW1_dynNets import dirSpW1_dynNet_SD, dirSpW1_staNet
 
 
 class dirBin1_staNet(dirSpW1_staNet):
-    def __init__(self, ovflw_lm=False, distr='bernoulli', dim_beta=1):
-        dirSpW1_staNet.__init__(self, ovflw_lm=ovflw_lm, distr=distr)
+    def __init__(self, avoid_ovflw_fun_flag=False, distr='bernoulli', dim_beta=1):
+        dirSpW1_staNet.__init__(self, avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr)
         self.n_reg_beta_tv = 0
         self.dim_beta = dim_beta
         self.ovflw_exp_L_limit = -50
@@ -49,7 +49,7 @@ class dirBin1_staNet(dirSpW1_staNet):
         log_inv_pi_mat = phi_i + phi_o.unsqueeze(1)
         if X_t is not None:
             log_inv_pi_mat = log_inv_pi_mat + self.regr_product(beta, X_t)
-        if self.ovflw_lm:
+        if self.avoid_ovflw_fun_flag:
             """if required force the exponent to stay whithin overflow-safe bounds"""
             log_inv_pi_mat =  soft_lu_bound(log_inv_pi_mat, l_limit=self.ovflw_exp_L_limit, u_limit=self.ovflw_exp_U_limit)
 
@@ -400,8 +400,8 @@ class dirBin1_dynNet_SD(dirBin1_staNet, dirSpW1_dynNet_SD):
         is flexible but for the moment we have a single parameter equal for all links
         """
 
-    def __init__(self, ovflw_lm=False, distr='bernoulli', dim_beta=1, rescale_SD=False):
-        dirBin1_staNet.__init__(self, ovflw_lm=ovflw_lm, distr=distr)
+    def __init__(self, avoid_ovflw_fun_flag=False, distr='bernoulli', dim_beta=1, rescale_SD=False):
+        dirBin1_staNet.__init__(self, avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr)
         self.rescale_SD = rescale_SD
         self.n_reg_beta_tv = 0
         self.dim_beta = dim_beta
@@ -441,7 +441,7 @@ class dirBin1_dynNet_SD(dirBin1_staNet, dirSpW1_dynNet_SD):
             if self.rescale_SD:
                 diag_resc_mat = exp_A * (1 - exp_A)
 
-            if self.ovflw_lm:
+            if self.avoid_ovflw_fun_flag:
                 log_inv_pi__mat = self.invPiMat(phi, ret_log=True)
                 L = self.ovflw_exp_L_limit
                 U = self.ovflw_exp_U_limit
@@ -519,13 +519,13 @@ class dirBin1_dynNet_SD(dirBin1_staNet, dirSpW1_dynNet_SD):
 
 def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T=None, dim_beta=1,
                                 learn_rate=0.01, T_test=10,
-                                N_steps=15000, print_every=1000, ovflw_lm=True, rescale_score=False):
+                                N_steps=15000, print_every=1000, avoid_ovflw_fun_flag=True, rescale_score=False):
 
 
     N = Y_T.shape[0]
     T = Y_T.shape[2]
 
-    model = dirBin1_dynNet_SD(dim_Beta=dim_beta, ovflw_lm=ovflw_lm, rescale_SD=rescale_score)
+    model = dirBin1_dynNet_SD(dim_Beta=dim_beta, avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, rescale_SD=rescale_score)
     phi_T_0 = torch.zeros(N * 2, T)
     for t in range(T):
         phi_T_0[:, t] = model.start_phi_form_obs(Y_T[:, :, t])
@@ -666,7 +666,7 @@ def estimate_and_save_dirBin1_models(Y_T, filter_type, regr_flag, SAVE_FOLD, X_T
 def load_dirBin1_models(N, T, filter_type, regr_flag, SAVE_FOLD,
                         dim_beta=1, n_beta_tv=0, learn_rate_beta=0.005,
                         learn_rate=0.01, T_test=10,
-                        N_steps=15000, ovflw_lm=True, rescale_score=False,
+                        N_steps=15000, avoid_ovflw_fun_flag=True, rescale_score=False,
                         return_last_diag=False):
 
     if filter_type == 'SS':

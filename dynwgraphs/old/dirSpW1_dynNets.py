@@ -14,7 +14,7 @@ from .utils.opt import optim_torch
 from torch.autograd import grad
 import torch.nn as nn
 #----------------------------------- Zero Augmented Static model functions
-#self = dirSpW1_dynNet_SD(ovflw_lm=True, rescale_SD = False )
+#self = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD = False )
 
 
 
@@ -23,9 +23,9 @@ class dirSpW1_staNet(nn.Module):
     This a class  for directed weighted sparse static networks (or sequences), modelled with a zero augmented distribution, one  parameter per each node (hence the 1 in the name)
     """
 
-    def __init__(self, N, T, ovflw_lm=True, distr='gamma',  dim_dist_par_un = 1, dim_beta = 1):
+    def __init__(self, N, T, avoid_ovflw_fun_flag=True, distr='gamma',  dim_dist_par_un = 1, dim_beta = 1):
         super(dirSpW1_staNet, self).__init__()
-        self.ovflw_lm = ovflw_lm
+        self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
         self.N = N
         self.T = T
         self.distr = distr
@@ -65,7 +65,7 @@ class dirSpW1_staNet(nn.Module):
         if X_t is not None:
             log_Econd_mat = log_Econd_mat + self.regr_product(beta, X_t)
 
-        if self.ovflw_lm:
+        if self.avoid_ovflw_fun_flag:
             """if required force the exponent to stay within overflow-safe bounds"""
             log_Econd_mat_restr = \
                 soft_lu_bound(log_Econd_mat, l_limit=self.ovflw_exp_L_limit, u_limit=self.ovflw_exp_U_limit)
@@ -659,8 +659,8 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
         will be flexible but for the moment we have a single parameter equal for all links
         """
 
-    def __init__(self, N, T, ovflw_lm=False, distr='gamma', rescale_SD=False, backprop_sd=False, dim_dist_par_un = 1, dim_beta = 1):
-        super().__init__(N, T, ovflw_lm=ovflw_lm, distr=distr, dim_dist_par_un = dim_dist_par_un, dim_beta = dim_beta)
+    def __init__(self, N, T, avoid_ovflw_fun_flag=False, distr='gamma', rescale_SD=False, backprop_sd=False, dim_dist_par_un = 1, dim_beta = 1):
+        super().__init__(N, T, avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr, dim_dist_par_un = dim_dist_par_un, dim_beta = dim_beta)
         self.rescale_SD = rescale_SD
         self.n_reg_beta_tv = 0
         self.backprop_sd = backprop_sd
@@ -715,7 +715,7 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
                 if self.rescale_SD:
                     diag_resc_mat = (sigma_mat**2)**A_t
 
-            if self.ovflw_lm:
+            if self.avoid_ovflw_fun_flag:
                 L = self.ovflw_exp_L_limit
                 U = self.ovflw_exp_U_limit
                 # multiply the score by the derivative of the overflow limit function
@@ -1116,14 +1116,14 @@ class dirSpW1_dynNet_SD(dirSpW1_staNet):
 def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, SAVE_FOLD,
                                      X_T=None, dim_beta=1, dim_dist_par_un=1, n_beta_tv=0, unit_measure=1e6,
                                     learn_rate=0.01, T_test=10,
-                                    N_steps=15000, print_every=1000, ovflw_lm=True, rescale_score=False,
+                                    N_steps=15000, print_every=1000, avoid_ovflw_fun_flag=True, rescale_score=False,
                                      load_ss_beta_coeff=True, load_ss_as_0=False):
 
         Y_T = Y_T/unit_measure
         N = Y_T.shape[0]
         T = Y_T.shape[2]
 
-        model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, distribution=distribution, rescale_SD=rescale_score, dim_beta=dim_beta,  dim_dist_par_un=dim_dist_par_un)
+        model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distribution=distribution, rescale_SD=rescale_score, dim_beta=dim_beta,  dim_dist_par_un=dim_dist_par_un)
         rel_improv_tol_SS = 1e-6
         min_opt_iter_SS = 20
         bandwidth_SS = min_opt_iter_SS
@@ -1167,7 +1167,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                     file_path = SAVE_FOLD + '/dirSpW1_SS_est_lr_' + \
                                 str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + \
                                 '_N_steps_' + str(N_steps) + \
-                                '_ovflw_lm_' + str(ovflw_lm) + \
+                                '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                                 '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                                 distribution + '_distr_' + 'dim_distr_par_' + str(model.dim_dist_par_un) + '.npz'
                     print(file_path)
@@ -1186,7 +1186,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                     file_path = SAVE_FOLD + '/dirSpW1_SS_est_lr_' + \
                                 str(learn_rate_load) + '_N_' + str(N) + '_T_' + str(T) + \
                                 '_N_steps_' + str(N_steps_load) + \
-                                '_ovflw_lm_' + str(ovflw_lm) + \
+                                '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                                 '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                                 distribution + '_distr_' + 'dim_distr_par_' + str(model.dim_dist_par_un) + '.npz'
 
@@ -1216,7 +1216,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                 file_path = SAVE_FOLD + '/dirSpW1_X0_SS_est_lr_' + \
                             str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + \
                             '_N_steps_' + str(N_steps) + \
-                            '_ovflw_lm_' + str(ovflw_lm) + \
+                            '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                             '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                             '_dim_beta_' + str(model.dim_beta) + \
                             distribution + '_distr_' + 'dim_distr_par_' + str(dim_dist_par_un) + '.npz'
@@ -1241,14 +1241,14 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                 file_path = SAVE_FOLD + '/dirSpW1_SS_est_lr_' + \
                             str(learn_rate_load) + '_N_' + str(N) + '_T_' + str(T+T_test) + \
                             '_N_steps_' + str(N_steps_load) + \
-                            '_ovflw_lm_' + str(ovflw_lm) + \
+                            '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                             '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                             distribution + '_distr_' + 'dim_distr_par_' + str(dim_dist_par_un) + '.npz'
 
                 ld_est = np.load(file_path, allow_pickle=True)
                 phi_ss_est_T, dist_par_un_ss = tens(ld_est["arr_0"]), tens(ld_est["arr_1"])
 
-                model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, rescale_SD=rescale_score, distribution=distribution, dim_beta=dim_beta, dim_dist_par_un=dim_dist_par_un)
+                model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, rescale_SD=rescale_score, distribution=distribution, dim_beta=dim_beta, dim_dist_par_un=dim_dist_par_un)
                 # for t in range(T):
                 #     phi_ss_est_T[:, t] = model.identify(phi_ss_est_T[:, t])
                 phi_T_0 = model.start_phi_from_obs_T(Y_T[:, :, -10:])
@@ -1289,7 +1289,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                     file_path = SAVE_FOLD + '/dirSpW1_SD_est_lr_' + \
                                 str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + \
                                 '_N_steps_' + str(N_steps) + '_N_BA_' + str(N_BA) + \
-                                '_resc_score_' + str(rescale_score) + '_ovflw_lm_' + str(ovflw_lm) + \
+                                '_resc_score_' + str(rescale_score) + '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                                 '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                                 distribution + '_distr_' + '_dim_distr_par_' + str(dim_dist_par_un) + \
                                 'test_sam_last_' + str(T_test) + '.npz'
@@ -1306,7 +1306,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                     file_path = SAVE_FOLD + '/dirSpW1_X0_SS_est_lr_' + \
                                 str(learn_rate_load) + '_N_' + str(N) + '_T_' + str(T+T_test) + \
                                 '_N_steps_' + str(N_steps_load) + \
-                                '_ovflw_lm_' + str(ovflw_lm) + \
+                                '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                                 '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                                 '_dim_beta_' + str(model.dim_beta) + \
                                 distribution + '_distr_' + 'dim_distr_par_' + str(dim_dist_par_un) + '.npz'
@@ -1315,7 +1315,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                     phi_ss_est_T, dist_par_un_0, beta_0 = tens(ld_est["arr_0"]), tens(ld_est["arr_1"]), tens(
                         ld_est["arr_2"])
 
-                    model = dirSpW1_dynNet_SD(ovflw_lm=ovflw_lm, rescale_SD=rescale_score, distribution=distribution, dim_beta=dim_beta, dim_dist_par_un=dim_dist_par_un)
+                    model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, rescale_SD=rescale_score, distribution=distribution, dim_beta=dim_beta, dim_dist_par_un=dim_dist_par_un)
                     # for t in range(T):
                     #     phi_ss_est_T[:, t] = model.identify(phi_ss_est_T[:, t])
                     phi_T_0 = model.start_phi_from_obs_T(Y_T[:, :, -10:])
@@ -1329,7 +1329,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                     file_path = SAVE_FOLD + '/dirSpW1_X0_SD_est_lr_' + \
                                 str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + \
                                 '_N_steps_' + str(N_steps) + '_N_BA_' + str(N_BA) + \
-                                '_resc_score_' + str(rescale_score) + '_ovflw_lm_' + str(ovflw_lm) + \
+                                '_resc_score_' + str(rescale_score) + '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                                 '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                                 distribution + '_distr_' + '_dim_distr_par_' + str(dim_dist_par_un) + \
                                 '_dim_beta_' + str(model.dim_beta) + \
@@ -1366,7 +1366,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
                 file_path = SAVE_FOLD + '/dirSpW1_X0_SD_est_lr_' + \
                             str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + \
                             '_N_steps_' + str(N_steps) + '_N_BA_' + str(N_BA) + \
-                            '_resc_score_' + str(rescale_score) + '_ovflw_lm_' + str(ovflw_lm) + \
+                            '_resc_score_' + str(rescale_score) + '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                             '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                             distribution + '_distr_' + '_dim_distr_par_' + str(dim_dist_par_un) + \
                             '_dim_beta_' + str(model.dim_beta) + \
@@ -1379,7 +1379,7 @@ def estimate_and_save_dirSpW1_models(Y_T, distribution, filter_type, regr_flag, 
 def load_dirSpW1_models(N, T, distribution, dim_dist_par_un, filter_type, regr_flag, SAVE_FOLD,
                         dim_beta=None, n_beta_tv=0, unit_measure=1e6,
                         learn_rate=0.01, T_test=10,
-                        N_steps=15000, ovflw_lm=True, rescale_score=False,
+                        N_steps=15000, avoid_ovflw_fun_flag=True, rescale_score=False,
                         return_last_diag=False):
 
     if filter_type == 'SS':
@@ -1389,7 +1389,7 @@ def load_dirSpW1_models(N, T, distribution, dim_dist_par_un, filter_type, regr_f
             file_path = SAVE_FOLD + '/dirSpW1_SS_est_lr_' + \
                         str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + \
                         '_N_steps_' + str(N_steps) + \
-                        '_ovflw_lm_' + str(ovflw_lm) + \
+                        '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                         '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                         distribution + '_distr_' + 'dim_distr_par_' + str(dim_dist_par_un) + '.npz'
             print(file_path)
@@ -1404,7 +1404,7 @@ def load_dirSpW1_models(N, T, distribution, dim_dist_par_un, filter_type, regr_f
             file_path = SAVE_FOLD + '/dirSpW1_X0_SS_est_lr_' + \
                         str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + \
                         '_N_steps_' + str(N_steps) + \
-                        '_ovflw_lm_' + str(ovflw_lm) + \
+                        '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                         '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                         '_dim_beta_' + str(dim_beta) + \
                         distribution + '_distr_' + 'dim_distr_par_' + str(dim_dist_par_un) + '.npz'
@@ -1428,7 +1428,7 @@ def load_dirSpW1_models(N, T, distribution, dim_dist_par_un, filter_type, regr_f
             file_path = SAVE_FOLD + '/dirSpW1_SD_est_lr_' + \
                         str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + \
                         '_N_steps_' + str(N_steps) + '_N_BA_' + str(N_BA) + \
-                        '_resc_score_' + str(rescale_score) + '_ovflw_lm_' + str(ovflw_lm) + \
+                        '_resc_score_' + str(rescale_score) + '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                         '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                         distribution + '_distr_' + '_dim_distr_par_' + str(dim_dist_par_un) + \
                         'test_sam_last_' + str(T_test) + '.npz'
@@ -1448,7 +1448,7 @@ def load_dirSpW1_models(N, T, distribution, dim_dist_par_un, filter_type, regr_f
             file_path = SAVE_FOLD + '/dirSpW1_X0_SD_est_lr_' + \
                         str(learn_rate) + '_N_' + str(N) + '_T_' + str(T) + \
                         '_N_steps_' + str(N_steps) + '_N_BA_' + str(N_BA) + \
-                        '_resc_score_' + str(rescale_score) + '_ovflw_lm_' + str(ovflw_lm) + \
+                        '_resc_score_' + str(rescale_score) + '_avoid_ovflw_fun_flag_' + str(avoid_ovflw_fun_flag) + \
                         '_unit_' + '10e' + str(np.int(np.log10(unit_measure))) + \
                         distribution + '_distr_' + '_dim_distr_par_' + str(dim_dist_par_un) + \
                         '_dim_beta_' + str(model.dim_beta) + \
