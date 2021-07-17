@@ -16,6 +16,8 @@ from . import _test_w_data_
 from .tensortools import tens
 import torch
 import numpy as np
+from dynwgraphs.dirGraphs1_dynNets import  dirBin1_sequence_ss
+
 
 def rand_steps(start_val, end_val, Nsteps, T, rand=True):
     out = np.zeros(T)
@@ -35,6 +37,7 @@ def rand_steps(start_val, end_val, Nsteps, T, rand=True):
         out = start_val
 
     return tens(out)
+
 
 def dgpAR(mu, B, sigma, T, N=1, minMax=None, scaling = "uniform"):
 
@@ -67,6 +70,7 @@ def gen_test_net(N, density):
     Y_mat *= 10000
     return Y_mat
 
+
 def get_test_w_seq(avg_weight = 1e5):    
     Y_T = tens(_test_w_data_["Y_T"])
     X_T = tens( _test_w_data_["X_T"])
@@ -87,6 +91,43 @@ def get_test_w_seq(avg_weight = 1e5):
     X_T_multi[:, :, 1, :] = torch.range(0, T-1) * torch.ones(N,N).unsqueeze(dim=2)
     return Y_T, X_scalar_T, X_T_multi
 
+
+def sample_phi_dgp_ar(model, phi_um, B, sigma, T):
+
+        N = phi_um.shape[0]
+        phi_T_sample_mat = torch.zeros(N, T)
+        for i in range(N):
+            phi_T_sample_mat[i, :] = dgpAR(phi_um[i], B, sigma, T)
+
+        phi_T_sample_list = model.par_matrix_T_to_list(phi_T_sample_mat)
+
+        for t in range(T):
+            #as first step, identify phi_io
+            phi_T_sample_list[t] = model.identify_phi_io(phi_T_sample_list[t])
+
+        return phi_T_sample_list
+
+
+def get_dgp_model(dgp_par, Y_reference=None ):
+
+    N = dgp_par["N"]
+    T = dgp_par["T"]
+
+    if Y_reference is None:
+        raise Exception("default choice yet to be defined")
+   
+    if dgp_par["model"] =="dirBin1":
+        mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T)) 
+        # set reference values for dgp 
+        phi_0 = mod_dgp.start_phi_from_obs(Y_reference)
+
+    if dgp_par["type"] == "AR":
+        mod_dgp.phi_T = sample_phi_dgp_ar(mod_dgp, phi_0, dgp_par["B"], dgp_par["sigma"], T)
+    
+        mod_dgp.Y_T = mod_dgp.sample_mats_from_par_lists(T, mod_dgp.phi_T)
+    
+    mod_dgp.set_par_dict_to_save()
+    return mod_dgp
 
 
 

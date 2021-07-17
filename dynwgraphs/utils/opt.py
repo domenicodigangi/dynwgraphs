@@ -78,7 +78,7 @@ def grad_norm_from_list(par_list):
         total_norm = torch.norm(torch.stack([torch.linalg.norm(p.grad.detach()).to(device) for p in parameters]), 2.0).item()
     return total_norm
 
-def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, folder_name="runs", run_name=None, tb_log_flag=True, hparams_dict_in=None, log_info=True):
+def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, folder_name="runs", tb_log_flag=True, hparams_dict_in=None, log_info=True, run_name=""):
     """given a function and a starting vector, run one of different pox optimizations"""
 
 
@@ -86,8 +86,8 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     if max_opt_iter <=10:
         tb_log_flag = False
 
-    {""}    
-
+  
+  
     if isinstance(unParIn, list):
         unPar = unParIn # [par for par in unParIn if par is not None]
     elif isinstance(unParIn, torch.ParameterDict):
@@ -105,18 +105,21 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
                   "LBFGS" : torch.optim.LBFGS(unPar, lr=lr),
                   "ADAHESSIAN" : Adahessian(unPar, lr=lr,  betas= (0.9, 0.999), weight_decay=0)}
 
-    hparams_dict = {"optimizer" :opt_n,  "lr" :lr, "max_opt_iter" :max_opt_iter, "rel_improv_tol" :rel_improv_tol, "no_improv_max_count" :no_improv_max_count,  "min_opt_iter" :min_opt_iter, "bandwidth" :bandwidth, "n_learned_par" :sum((p.numel() for p in unPar))}
+    hparams_dict = {"optimizer" :opt_n,  "lr" :lr, "n_par" :sum((p.numel() for p in unPar))}
 
     if hparams_dict_in is not None:
         hparams_dict.update(hparams_dict_in)
 
-    logger.info(f"starting optimization with {''.join([f'{key}:: {value}, ' for key, value in hparams_dict.items()])}")
+    opt_info_str = run_name + ''.join([f'{key}_{value}_' for key, value in hparams_dict.items()])
+
+    logger.info(f"starting optimization with {opt_info_str}")
+
 
     logger.info(f"initial f val = {obj_fun_()}")
 
     if tb_log_flag:
 
-        full_name = Path(folder_name) 
+        full_name = Path(folder_name) / opt_info_str
 
         writer = SummaryWriter(str(full_name))
 
