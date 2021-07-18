@@ -48,6 +48,8 @@ class dirGraphs_funs(nn.Module):
         self.ovflw_exp_L_limit = -50
         self.ovflw_exp_U_limit = 40
         self.phi_id_type=phi_id_type
+        self.obs_type = "continuous_positive"
+
 
     def check_reg_and_coeff_pres(self, X, beta):
         """
@@ -199,7 +201,7 @@ class dirGraphs_funs(nn.Module):
         return ''.join([f'{key}={value}_' for key, value in dict.items()])
 
     def file_names(self, save_path):
-        pre_name =  save_path / f"{self.info_str()}"
+        pre_name =  save_path / f"{self.info_str_long()}"
         names = {}
         names["model"] = f"{pre_name}_model.pkl"
         names["parameters"] = f"{pre_name}_par.pkl"
@@ -267,6 +269,7 @@ class dirGraphs_funs(nn.Module):
             Y_T_sampled[:, :, t]  = dist.sample()
             
         return Y_T_sampled
+
 
 class dirGraphs_sequence_ss(dirGraphs_funs):
     """
@@ -354,9 +357,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             X_t = None
         return Y_t, X_t
  
-    
-   
-
     def get_par_t(self, t):
         """
         If a paramter is time varying, return the parameter at the t-th time step, if not return the only time step present. 
@@ -373,8 +373,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
        
         return phi_t, dist_par_un_t, beta_t
 
-
-  
     def get_seq_latent_par(self):
         phi_T_data = self.par_list_to_matrix_T(self.phi_T) 
         
@@ -410,8 +408,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 #constant beta for uniform regressor
                 self.identification_type = "phi_t_beta_const"#
         else:
-            self.identification_type = "phi_t"#
-        
+            self.identification_type = "phi_t"#        
 
     def shift_sequence_phi_o_T_beta_const(self, c, x_T):    
         beta_t_all = self.beta_T[0].clone()
@@ -423,7 +420,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             phi_i, phi_o = splitVec(phi_t)
             phi_o = phi_o - c * x_T[t]
             self.phi_T[t] = torch.cat((phi_i, phi_o))
-            
+
     def get_n_obs(self):
         return self.Y_T_train.numel()
 
@@ -491,7 +488,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
             self.shift_sequence_phi_o_T_beta_const(c, x_T)
 
-
     def check_regressors_seq_shape(self):
         """
         check that:
@@ -523,8 +519,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def run_checks(self):
        self.check_regressors_seq_shape()
 
-    def set_all_requires_grad(self, flag):
-        for p in self.parameters():
+    def set_all_requires_grad(self, list, flag):
+        for p in list:
             p.requires_grad = flag
 
     def estimate_ss_t(self, t, est_phi, est_dist_par, est_beta, tb_log_flag=False):
@@ -556,7 +552,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         run_name = f"SS_t_{t}_"
 
-        hparams_dict = {"est_phi" :est_phi, "est_dist_par" :est_dist_par, "est_beta" :est_beta}
+        hparams_dict = {"time_step":t, "est_phi" :est_phi, "est_dist_par" :est_dist_par, "est_beta" :est_beta, "dist": self.distr, "size_par_dist": self.size_dist_par_un_t, "size_beta": self.size_beta_t, "avoid_ovflw_fun_flag":self.avoid_ovflw_fun_flag}
 
         optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_ss_t["max_opt_iter"], opt_n=self.opt_options_ss_t["opt_n"], lr=self.opt_options_ss_t["lr"], min_opt_iter=self.opt_options_ss_t["min_opt_iter"], run_name=run_name, tb_log_flag=False, log_info=False, hparams_dict_in=hparams_dict)
 
@@ -623,19 +619,16 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         if self.beta_T is not None:
             self.par_dict_to_save["beta_T"] = self.beta_T
 
-        par_l_to_opt = []
+        self.par_l_to_opt = []
         for l in self.par_dict_to_save.values():
-            par_l_to_opt.extend(l)
+            self.par_l_to_opt.extend(l)
 
-
-    def estimate_ss_seq_joint(self, tb_log_flag=True):
+    def estimate_ss_seq_joint(self, tb_log_flag=True, tb_save_fold="runs"):
         """
         Estimate from sequence of observations a set of parameters that can be time varying or constant. If time varying estimate a different set of parameters for each time step
         """
         
         self.run_checks()
-
-        self.set_all_requires_grad(True)
 
         if not self.optimized_once:
             self.init_phi_T_from_obs()
@@ -644,17 +637,18 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.optimized_once = True
 
+        self.set_all_requires_grad(self.par_l_to_opt, True)
+
         def obj_fun():
             return  - self.loglike_seq_T()
       
         run_name = f"SSSeq_"
 
-        hparams_dict = {"phi_tv" :self.phi_tv, "dist_par_tv" :self.dist_par_tv, "beta_tv" :tens(self.beta_tv), "phi_par_init" :self.phi_par_init}
-
-
-        optim_torch(obj_fun, self.par_l_to_opt, max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], min_opt_iter=self.opt_options_ss_seq["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = hparams_dict)
+        opt_out = optim_torch(obj_fun, self.par_l_to_opt, max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], min_opt_iter=self.opt_options_ss_seq["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold)
 
         self.identify_sequence()
+
+        return opt_out
 
     def info_tv_par(self):
         return f"dist_{self.distr}_phi_tv_{self.phi_tv}_size_par_dist_{self.size_dist_par_un_t}_tv_{self.dist_par_tv}_size_beta_{self.size_beta_t}_tv_{self.beta_tv}_"
@@ -662,13 +656,20 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def info_opt_par(self):
         return self.str_from_dic(self.opt_options_ss_seq)
 
-    def info_model(self):
+    def info_filter(self):
         return  f"ss_"
 
-    def info_str(self):
-        return self.info_model() + self.info_tv_par() + self.info_opt_par()
+    def info_str_long(self):
+        return self.info_tv_par() + self.info_opt_par()
 
-   
+    def get_info_dict(self):
+
+        model_info_dict = {"dist": self.distr, "filter_type":self.info_filter(), "phi_tv": float(self.phi_tv) if self.phi_tv is not None else 0, "size_par_dist": self.size_dist_par_un_t, "dist_par_tv": float(self.dist_par_tv) if self.dist_par_tv is not None else 0, "size_beta": self.size_beta_t, "beta_tv": self.beta_tv.sum().item(), "avoid_ovflw_fun_flag":self.avoid_ovflw_fun_flag}
+
+        return model_info_dict
+
+
+
 
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
@@ -846,7 +847,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def init_static_sd_from_obs(self):
        pass
 
-    def info_model(self):
+    def info_filter(self):
         return f"sd_init_{self.init_sd_type}_resc_{self.rescale_SD}_"
 
     def info_opt_par(self):
@@ -927,9 +928,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.par_l_to_opt.append(self.beta_T[0])
             self.par_dict_to_save["beta_T"] = self.beta_T[0]
 
-        
-
-
     def estimate_sd(self, tb_log_flag=True, tb_save_fold="runs"):
 
         self.run_checks()
@@ -942,24 +940,16 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             # the inititial value of sd tv par is etimated beforehand on a single snapshot
 
             self.estimate_ss_t(0, True, self.beta_T is not None, self.dist_par_un_T is not None)
-
-        
+       
         self.set_par_dict_to_save()
-
 
         def obj_fun():
             self.roll_sd_filt()
             return - self.loglike_seq_T()
-  
-    
-        
-        run_name = f"SD_"
+          
+        run_name = self.info_filter()
 
-        hparams_dict = {"phi_tv" :self.phi_tv, "dist_par_tv" :self.dist_par_tv, "beta_tv" :tens(self.beta_tv), "init_sd_type" :self.init_sd_type}
-
-
-        return optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], min_opt_iter=self.opt_options_sd["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = hparams_dict, folder_name=tb_save_fold)
-
+        return optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], min_opt_iter=self.opt_options_sd["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold)
 
     def load_par(self,  load_path):
         par_dic = pickle.load(open(self.file_names(load_path)["parameters"], "rb"))
@@ -1071,6 +1061,12 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         return n_par
 
+    def get_info_dict(self):
+        info_dict = super().get_info_dict()
+        info_dict["init_sd_type"] = self.init_sd_type
+        info_dict["rescale_SD"] = self.rescale_SD
+
+        return info_dict
 
 # Weighted Graphs
 
@@ -1201,6 +1197,9 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         A_t=putZeroDiag(Y_t)>0
         return torch.sum(Y_t[A_t])/torch.sum(EYcond_mat[A_t]), torch.mean(Y_t[A_t]/EYcond_mat[A_t])
 
+    def get_Y_T_to_save(self):
+        return self.Y_T
+
 
 class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
@@ -1295,6 +1294,9 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
 
         super().__init__( Y_T_train, *args, distr = "bernoulli",   **kwargs)
   
+        self.obs_type = "bin"
+
+
     def invPiMat(self, phi, beta, X_t, ret_log=False):
         """
         given the vector of unrestricted parameters, return the matrix of
@@ -1435,7 +1437,6 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
             out = torch.sum(log_probs)
         return out.clone()
 
-
     def check_exp_vals(self, t):
         Y_t, X_t = self.get_obs_t(t)
         phi_t, _, beta_t = self.get_par_t(t)
@@ -1449,6 +1450,8 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
 
         return out.mean()
 
+    def get_Y_T_to_save(self):
+        return self.Y_T >0
     
 class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
