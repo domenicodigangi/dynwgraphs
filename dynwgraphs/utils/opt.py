@@ -78,15 +78,15 @@ def grad_norm_from_list(par_list):
         total_norm = torch.norm(torch.stack([torch.linalg.norm(p.grad.detach()).to(device) for p in parameters]), 2.0).item()
     return total_norm
 
-def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, folder_name="runs", tb_log_flag=True, hparams_dict_in=None, log_info=True, run_name=""):
+def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, folder_name="runs_tb", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=10):
     """given a function and a starting vector, run one of different pox optimizations"""
 
 
     # do not log tensorboard data for opt runs that are clearly tests
-    if max_opt_iter <=10:
+    if max_opt_iter <=5:
         tb_log_flag = False
 
-  
+    logger.info(f"saving to {folder_name}")
   
     if isinstance(unParIn, list):
         unPar = unParIn # [par for par in unParIn if par is not None]
@@ -107,14 +107,12 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
 
     hparams_dict = {"optimizer" :opt_n,  "lr" :lr, "n_par" :sum((p.numel() for p in unPar))}
 
+    opt_info_str = run_name + ''.join([f'{key}_{value}_' for key, value in hparams_dict.items()])
+
     if hparams_dict_in is not None:
         hparams_dict.update(hparams_dict_in)
 
-    opt_info_str = run_name + ''.join([f'{key}_{value}_' for key, value in hparams_dict.items()])
-
     logger.info(f"starting optimization with {opt_info_str}")
-
-
     logger.info(f"initial f val = {obj_fun_()}")
 
     if tb_log_flag:
@@ -181,22 +179,28 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
         if tb_log_flag:
             writer.add_scalar('Loss/value', loss.item(), n_iter)
             writer.add_scalar('Loss/roll_avg_rel_improv', roll_rel_im, n_iter)
-            writer.add_scalar('Loss/roll_avg_rel_improv', grad_norm, n_iter)
+            writer.add_scalar('Loss/grad_norm', grad_norm, n_iter)
 
-        if log_info:
+        if (n_iter % log_interval) == 0:
             logger.info(f" iter {n_iter}, g_norm {'{:.3e}'.format(grad_norm)}, roll rel impr { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
 
 
-    hparams_dict["actual_opt_iter"]= n_iter
+    hparams_dict["actual_n_opt_iter"]= n_iter
+    hparams_dict["max_opt_iter"]= max_opt_iter
 
+    print(hparams_dict)
     final_loss = closure()
     logger.info(f"final loss {final_loss.item()}")
     if tb_log_flag:
         metric_dict = {"final_loss" :loss.item()}
         writer.add_hparams(hparams_dict, metric_dict)
+
        
         writer.flush()
         writer.close()
+
+    # add prefix to dict keys
+    hparams_dict = {f"{run_name}{key}": val for key, val in hparams_dict.items()}
 
     return optimizer, hparams_dict
 
