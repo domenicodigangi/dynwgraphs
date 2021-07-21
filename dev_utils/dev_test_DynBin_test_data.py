@@ -108,7 +108,7 @@ mod_dgp = dirBin1_SD(torch.zeros(N,N,T))
 Y = (Y_T_test[:,:,0]>0).float()
 phi_0 = mod_dgp.start_phi_from_obs(Y)
 mod_dgp.phi_T = sample_phi_dgp_ar(phi_0, B, sigma, T)
-Y_T_sampled = mod_dgp.sample_mats_from_par_lists(T, mod_dgp.phi_T)
+Y_T_sampled = mod_dgp.sample_Y_T_from_par_list(T, mod_dgp.phi_T)
 
 
 

@@ -108,23 +108,78 @@ def sample_phi_dgp_ar(model, phi_um, B, sigma, T):
         return phi_T_sample_list
 
 
-def get_dgp_model(dgp_par, Y_reference=None ):
+def get_dgp_model(dgp_par, Y_reference=None, beta_tv = tens([False]).bool(), X_type = None ):
 
     N = dgp_par["N"]
     T = dgp_par["T"]
 
     if Y_reference is None:
         raise Exception("default choice yet to be defined")
-   
-    if dgp_par["model"] =="dirBin1":
-        mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T)) 
-        # set reference values for dgp 
-        phi_0 = mod_dgp.start_phi_from_obs(Y_reference)
+    else:
+        assert N == Y_reference.shape[0]
 
-    if dgp_par["type"] == "AR":
-        mod_dgp.phi_T = sample_phi_dgp_ar(mod_dgp, phi_0, dgp_par["B"], dgp_par["sigma"], T)
     
-        mod_dgp.Y_T = mod_dgp.sample_mats_from_par_lists(T, mod_dgp.phi_T)
+        
+    mod_tmp = dirBin1_sequence_ss(torch.zeros(N,N,T)) 
+
+    if dgp_par["model"] =="dirBin1":
+
+        # set reference values for dgp 
+        phi_0 = mod_tmp.start_phi_from_obs(Y_reference)
+        dist_par_un_T_dgp = None
+    else:
+        raise
+        
+
+    if dgp_par["dgp_phi"]["is_tv"]:    
+        if dgp_par["dgp_phi"]["type"] == "AR":
+            B = dgp_par["dgp_phi"]["B"]
+            sigma = dgp_par["dgp_phi"]["sigma"]
+            phi_T_dgp = sample_phi_dgp_ar(mod_tmp, phi_0, B, sigma, T)
+        else:
+            raise
+    else:
+        phi_T_dgp = [phi_0]
+
+
+    
+    # dgp for beta
+    if "dgp_beta" in dgp_par:
+        beta_tv = dgp_par["dgp_beta"]["is_tv"]
+        size_beta_t = dgp_par["dgp_beta"]["size_beta_t"]
+
+        if dgp_par["dgp_beta"]["X_type"] == "uniform":
+            if len(beta_tv) != 1:
+                raise
+            x_T = np.random.standard_normal(T)
+            X_T = tens(np.tile(x_T, (N, N, 1, 1)))
+        else:
+            raise
+
+        beta_0 = dgp_par["dgp_beta"]["beta_0"]  
+        if dgp_par["dgp_beta"]["is_tv"]:    
+            if dgp_par["dgp_beta"]["type"] == "AR":
+                B = dgp_par["dgp_beta"]["B"]
+                sigma = dgp_par["dgp_beta"]["sigma"]
+                beta_T_dgp = mod_tmp.par_matrix_T_to_list(dgpAR(beta_0, B, sigma, T))
+            else:
+                raise
+        else:
+            beta_T_dgp = [beta_0]
+
+    else:
+        X_T = None
+        size_beta_t = None
+        beta_tv = None
+
+    
+    mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, beta_tv = beta_tv, size_beta_t = size_beta_t) 
+
+    mod_dgp.phi_T = phi_T_dgp
+    mod_dgp.beta_T = beta_T_dgp
+    mod_dgp.dist_par_un_T = dist_par_un_T_dgp
+
+    mod_dgp.Y_T = mod_dgp.sample_Y_T_from_par_list(T, mod_dgp.phi_T, X_T = mod_dgp.X_T, beta_T=mod_dgp.beta_T, dist_par_un_T=mod_dgp.dist_par_un_T)
     
     mod_dgp.set_par_dict_to_save()
     return mod_dgp

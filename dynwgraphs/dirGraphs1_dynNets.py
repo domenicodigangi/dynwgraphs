@@ -203,8 +203,8 @@ class dirGraphs_funs(nn.Module):
     def file_names(self, save_path):
         pre_name =  save_path / f"{self.info_str_long()}"
         names = {}
-        names["model"] = f"{pre_name}_model.pkl"
-        names["parameters"] = f"{pre_name}_par.pkl"
+        names["model"] = f"{pre_name}model.pkl"
+        names["parameters"] = f"{pre_name}par.pkl"
         return names
 
     def save_model(self, save_path):
@@ -216,7 +216,6 @@ class dirGraphs_funs(nn.Module):
         save_path = Path(f"./data_dynwgraphs_model")
         save_path.mkdir(parents=True, exist_ok=True)
         return save_path
-
 
     def save_parameters(self, save_path=None):
         if save_path is None:
@@ -234,7 +233,7 @@ class dirGraphs_funs(nn.Module):
     def par_list_to_matrix_T(self, ls):
         return torch.stack([p.data for p in ls], dim=1)
 
-    def get_t_or_0(self, t,  is_tv, par_list_T):
+    def get_t_or_t0(self, t,  is_tv, par_list_T):
         if par_list_T is None:
             return None
         else:
@@ -246,12 +245,22 @@ class dirGraphs_funs(nn.Module):
                 raise
 
 
+    def get_reg_t_or_none(self, t, Z_T):
+        """ regressors are assumed to always be in the form of 4d tensor N x N x N_regressors x T  """
+        
+        if Z_T is not None:
+            Z_t = Z_T[:, :, :, t]
+        else:
+            Z_t = None
+        return Z_t
     
 
-    def sample_mats_from_par_lists(self, T, phi_T, beta_T=None, X_T=None, dist_par_un_T=None):
+    def sample_Y_T_from_par_list(self, T, phi_T, beta_T=None, X_T=None, dist_par_un_T=None):
 
         if beta_T is not None:
-            raise Exception("not yet ready")
+            beta_tv = len(beta_T)>0
+        else:
+            beta_tv = None
 
         N = phi_T[0].shape[0]//2
         Y_T_sampled = torch.zeros(N, N, T)
@@ -261,10 +270,12 @@ class dirGraphs_funs(nn.Module):
         else:
             dist_par_tv = None
         for t in range(T):
-            phi_t = self.get_t_or_0(t, phi_tv, phi_T) 
-            dist_par_un_t = self.get_t_or_0(t, dist_par_tv, dist_par_un_T) 
+            X_t = self.get_reg_t_or_none(t, X_T)
+            phi_t = self.get_t_or_t0(t, phi_tv, phi_T) 
+            beta_t = self.get_t_or_t0(t, beta_tv, beta_T) 
+            dist_par_un_t = self.get_t_or_t0(t, dist_par_tv, dist_par_un_T) 
             
-            dist = self.dist_from_pars(self.distr, phi_t , None, None, dist_par_un=dist_par_un_t, A_t=None)
+            dist = self.dist_from_pars(self.distr, phi_t , beta_t, X_t, dist_par_un=dist_par_un_t, A_t=None)
 
             Y_T_sampled[:, :, t]  = dist.sample()
             
@@ -276,11 +287,11 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     Single snapshot sequence of, binary or weighted, fitness models with external regressors. 
     """
 
-    _opt_options_ss_t_def = {"opt_n" :"ADAM", "min_opt_iter" :50, "max_opt_iter" :1000, "lr" :0.01}
-    _opt_options_ss_seq_def = {"opt_n" :"ADAM", "min_opt_iter" :50, "max_opt_iter" :5000, "lr" :0.01}
+    _opt_options_ss_t_def = {"opt_n" :"ADAM", "max_opt_iter" :1000, "lr" :0.01}
+    _opt_options_ss_seq_def = {"opt_n" :"ADAM", "max_opt_iter" :5000, "lr" :0.01}
 
     # set default init kwargs to be shared between binary and weighted models
-    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = 1, beta_tv= tens([False]).bool(), data_name="", 
+    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), data_name="", 
             opt_options_ss_t = _opt_options_ss_t_def, 
             opt_options_ss_seq = _opt_options_ss_seq_def):
 
@@ -309,9 +320,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.n_reg = self.X_T_train.shape[2]
 
         self.phi_par_init = phi_par_init
-        self.dist_par_tv = dist_par_tv
         self.beta_tv = beta_tv
         self.n_beta_tv = sum(beta_tv)
+        self.dist_par_tv = dist_par_tv
         self.phi_tv = phi_tv
 
         self.reg_cross_unique = self.check_regressors_cross_uniqueness()
@@ -348,15 +359,14 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 self.beta_T = [torch.zeros(size_beta_t, self.n_reg, requires_grad=True)]
 
         self.optimized_once = False
-        
+
+
+   
     def get_obs_t(self, t):
-        Y_t = self.Y_T_train[:, :, t]
-        if self.X_T_train is not None:
-            X_t = self.X_T_train[:, :, :, t]
-        else:
-            X_t = None
+        Y_t = self.Y_T[:,:,t]
+        X_t = self.get_reg_t_or_none(t, self.X_T)
         return Y_t, X_t
- 
+
     def get_par_t(self, t):
         """
         If a paramter is time varying, return the parameter at the t-th time step, if not return the only time step present. 
@@ -365,11 +375,11 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         if not (0 <= t <= self.T_train) : 
             raise Exception(f"Requested t = {t}, T = {self.T_train} ")
 
-        phi_t = self.get_t_or_0(t, self.phi_tv, self.phi_T)
+        phi_t = self.get_t_or_t0(t, self.phi_tv, self.phi_T)
 
-        dist_par_un_t = self.get_t_or_0(t, self.dist_par_tv, self.dist_par_un_T)
+        dist_par_un_t = self.get_t_or_t0(t, self.dist_par_tv, self.dist_par_un_T)
     
-        beta_t = self.get_t_or_0(t, any(self.beta_tv), self.beta_T)
+        beta_t = self.get_t_or_t0(t, any(self.beta_tv), self.beta_T)
        
         return phi_t, dist_par_un_t, beta_t
 
@@ -554,7 +564,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         hparams_dict = {"time_step":t, "est_phi" :est_phi, "est_dist_par" :est_dist_par, "est_beta" :est_beta, "dist": self.distr, "size_par_dist": self.size_dist_par_un_t, "size_beta": self.size_beta_t, "avoid_ovflw_fun_flag":self.avoid_ovflw_fun_flag}
 
-        optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_ss_t["max_opt_iter"], opt_n=self.opt_options_ss_t["opt_n"], lr=self.opt_options_ss_t["lr"], min_opt_iter=self.opt_options_ss_t["min_opt_iter"], run_name=run_name, tb_log_flag=False, log_info=False, hparams_dict_in=hparams_dict)
+        optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_ss_t["max_opt_iter"], opt_n=self.opt_options_ss_t["opt_n"], lr=self.opt_options_ss_t["lr"], run_name=run_name, tb_log_flag=False, log_info=False, hparams_dict_in=hparams_dict)
 
     def loglike_seq_T(self):
         loglike_T = 0
@@ -644,14 +654,14 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
       
         run_name = f"SSSeq_"
 
-        opt_out = optim_torch(obj_fun, self.par_l_to_opt, max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], min_opt_iter=self.opt_options_ss_seq["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold)
+        opt_out = optim_torch(obj_fun, self.par_l_to_opt, max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold)
 
         self.identify_sequence()
 
         return opt_out
 
     def info_tv_par(self):
-        return f"dist_{self.distr}_phi_tv_{self.phi_tv}_size_par_dist_{self.size_dist_par_un_t}_tv_{self.dist_par_tv}_size_beta_{self.size_beta_t}_tv_{self.beta_tv}_"
+        return f"dist_{self.distr}_phi_tv_{self.phi_tv}_size_par_dist_{self.size_dist_par_un_t}_tv_{self.dist_par_tv}_size_beta_{self.size_beta_t}_tv_{[d.item() for d in self.beta_tv]}_"
 
     def info_opt_par(self):
         return self.str_from_dic(self.opt_options_ss_seq)
@@ -660,7 +670,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         return  f"ss_"
 
     def info_str_long(self):
-        return self.info_tv_par() + self.info_opt_par()
+        return self.info_filter() # self.info_tv_par() + self.info_opt_par()
 
     def get_info_dict(self):
 
@@ -668,8 +678,47 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         return model_info_dict
 
+    def load_par(self,  load_path):
+        par_dic = pickle.load(open(self.file_names(load_path)["parameters"], "rb"))
 
+        self.set_par_val_from_dict(par_dic)
 
+    def set_par_val_from_dict(self, dict):
+        for k, v in dict.items():
+            logger.info(f"setting {k}")
+            if not hasattr(self, k):
+                raise Exception(f"attribute {k} not present")
+            else:
+                a = getattr(self, k)
+                if type(a) != type(v):
+                    if type(a) == list:
+                        if type(a[0]) != type(v):
+                            raise Exception(f"attribute {k} of wrong type")
+                        else:
+                            if not a[0].shape == v.shape:
+                                raise Exception(f"attribute {k} of wrong shape")
+                            else:
+                                a[0] = v
+                    else:
+                        raise Exception(f"attribute {k} of wrong type")
+                else:                    
+                    if type(a) in [dict, torch.nn.modules.container.ParameterDict ]:
+                        for k1, v1 in a.items():
+                            logger.info(f"setting {k1}")
+                            if not v1.shape == v[k1].shape:
+                                raise Exception(f"attribute {k1} of wrong shape")
+                        setattr(self, k, v)
+                    elif type(a) == list:
+                        for t in range(len(a)):
+                            if a[t].shape == v[t].shape:
+                                a[t] = v[t]
+                            else: 
+                                raise
+                    else:
+                        raise
+                        
+        self.par_dict_to_save = dict
+        self.optimized_once = True
 
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
@@ -678,7 +727,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         init_sd_type : "unc_mean", "est_joint", "est_ss_before"
     """
 
-    __opt_options_sd_def = {"opt_n" :"ADAMHD", "min_opt_iter" :50, "max_opt_iter" :3500, "lr" :0.01}
+    __opt_options_sd_def = {"opt_n" :"ADAMHD", "max_opt_iter" :3500, "lr" :0.01}
 
     def __init__(self, *args, init_sd_type = "unc_mean", rescale_SD = True, opt_options_sd = __opt_options_sd_def, **kwargs ):
 
@@ -853,36 +902,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def info_opt_par(self):
         return self.str_from_dic(self.opt_options_sd)
 
-    def set_par_val_from_dict(self, dict):
-        for k, v in dict.items():
-            logger.info(f"setting {k}")
-            if not hasattr(self, k):
-                raise Exception(f"attribute {k} not present")
-            else:
-                a = getattr(self, k)
-                if type(a) != type(v):
-                    if type(a) == list:
-                        if type(a[0]) != type(v):
-                            raise Exception(f"attribute {k} of wrong type")
-                        else:
-                            if not a[0].shape == v.shape:
-                                raise Exception(f"attribute {k} of wrong shape")
-                            else:
-                                a[0] = v
-                    else:
-                        raise Exception(f"attribute {k} of wrong type")
-                else:                    
-                    if type(a) in [dict, torch.nn.modules.container.ParameterDict ]:
-                        for k1, v1 in a.items():
-                            logger.info(f"setting {k1}")
-                            if not v1.shape == v[k1].shape:
-                                raise Exception(f"attribute {k1} of wrong shape")
-                        setattr(self, k, v)
-                        
-        self.par_dict_to_save = dict
-        self.optimized_once = True
-        self.roll_sd_filt()
-
     def set_par_dict_to_save(self):
         # dict define for consistency with non sd version
         self.par_dict_to_save = {}
@@ -949,12 +968,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
           
         run_name = self.info_filter()
 
-        return optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], min_opt_iter=self.opt_options_sd["min_opt_iter"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold)
-
-    def load_par(self,  load_path):
-        par_dic = pickle.load(open(self.file_names(load_path)["parameters"], "rb"))
-
-        self.set_par_val_from_dict(par_dic)
+        return optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold)
 
     def run(self, est_flag, l_s_path  ):
         if est_flag:
@@ -1067,6 +1081,11 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         info_dict["rescale_SD"] = self.rescale_SD
 
         return info_dict
+
+    def load_par(self, load_path):
+        super().load_par(load_path)
+        self.roll_sd_filt()
+
 
 # Weighted Graphs
 
