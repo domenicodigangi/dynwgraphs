@@ -92,20 +92,21 @@ def get_test_w_seq(avg_weight = 1e5):
     return Y_T, X_scalar_T, X_T_multi
 
 
-def sample_phi_dgp_ar(model, phi_um, B, sigma, T):
+def sample_par_vec_dgp_ar(model, unc_mean, B, sigma, T, identify=True):
 
-        N = phi_um.shape[0]
-        phi_T_sample_mat = torch.zeros(N, T)
+        N = unc_mean.shape[0]
+        par_T_sample_mat = torch.zeros(N, T)
         for i in range(N):
-            phi_T_sample_mat[i, :] = dgpAR(phi_um[i], B, sigma, T)
+            par_T_sample_mat[i, :] = dgpAR(unc_mean[i], B, sigma, T)
 
-        phi_T_sample_list = model.par_matrix_T_to_list(phi_T_sample_mat)
+        par_T_sample_list = model.par_tens_T_to_list(par_T_sample_mat)
 
-        for t in range(T):
-            #as first step, identify phi_io
-            phi_T_sample_list[t] = model.identify_phi_io(phi_T_sample_list[t])
+        if identify:
+            for t in range(T):
+                #as first step, identify phi_io
+                par_T_sample_list[t] = model.identify_phi_io(par_T_sample_list[t])
 
-        return phi_T_sample_list
+        return par_T_sample_list
 
 
 def get_dgp_model(dgp_par, Y_reference=None, beta_tv = tens([False]).bool(), X_type = None ):
@@ -135,7 +136,7 @@ def get_dgp_model(dgp_par, Y_reference=None, beta_tv = tens([False]).bool(), X_t
         if dgp_par["dgp_phi"]["type"] == "AR":
             B = dgp_par["dgp_phi"]["B"]
             sigma = dgp_par["dgp_phi"]["sigma"]
-            phi_T_dgp = sample_phi_dgp_ar(mod_tmp, phi_0, B, sigma, T)
+            phi_T_dgp = sample_par_vec_dgp_ar(mod_tmp, phi_0, B, sigma, T)
         else:
             raise
     else:
@@ -148,6 +149,7 @@ def get_dgp_model(dgp_par, Y_reference=None, beta_tv = tens([False]).bool(), X_t
         beta_tv = dgp_par["dgp_beta"]["is_tv"]
         size_beta_t = dgp_par["dgp_beta"]["size_beta_t"]
 
+        #sample regressors
         if dgp_par["dgp_beta"]["X_type"] == "uniform":
             if len(beta_tv) != 1:
                 raise
@@ -156,12 +158,24 @@ def get_dgp_model(dgp_par, Y_reference=None, beta_tv = tens([False]).bool(), X_t
         else:
             raise
 
-        beta_0 = dgp_par["dgp_beta"]["beta_0"]  
-        if dgp_par["dgp_beta"]["is_tv"]:    
-            if dgp_par["dgp_beta"]["type"] == "AR":
-                B = dgp_par["dgp_beta"]["B"]
-                sigma = dgp_par["dgp_beta"]["sigma"]
-                beta_T_dgp = mod_tmp.par_matrix_T_to_list(dgpAR(beta_0, B, sigma, T))
+        # sample reg coeff
+        dgp_par_beta = dgp_par["dgp_beta"]
+        beta_0 = dgp_par_beta["beta_0"]
+        if beta_0.shape[0] != dgp_par_beta["size_beta_t"]:
+            raise 
+
+        if any(dgp_par_beta["is_tv"]):
+            if not  all(dgp_par_beta["is_tv"]):
+                raise    
+            if dgp_par_beta["type"] == "AR":
+                B = dgp_par_beta["B"]
+                sigma = dgp_par_beta["sigma"]
+                if dgp_par_beta["size_beta_t"] == 1:
+                    beta_T_dgp = mod_tmp.par_tens_T_to_list(dgpAR(beta_0, B, sigma, T).unsqueeze(dim=1))
+                elif dgp_par_beta["size_beta_t"] >= 1:
+                    beta_T_dgp = sample_par_vec_dgp_ar(mod_tmp, beta_0, B, sigma, T)
+                    beta_T_dgp = [b.unsqueeze(1) for b in beta_T_dgp]
+                    
             else:
                 raise
         else:
@@ -172,7 +186,7 @@ def get_dgp_model(dgp_par, Y_reference=None, beta_tv = tens([False]).bool(), X_t
         size_beta_t = None
         beta_tv = None
 
-    
+    print(beta_tv)
     mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, beta_tv = beta_tv, size_beta_t = size_beta_t) 
 
     mod_dgp.phi_T = phi_T_dgp
