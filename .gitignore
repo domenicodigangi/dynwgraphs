@@ -110,3 +110,5 @@ dev_utils/runs
 
 # temp data
 dev_utils/temp_data
+
+mlruns/
