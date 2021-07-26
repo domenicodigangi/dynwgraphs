@@ -112,3 +112,5 @@ dev_utils/runs
 dev_utils/temp_data
 
 mlruns/
+
+tb_logs/

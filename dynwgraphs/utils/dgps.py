@@ -12,11 +12,25 @@ Created on Wednesday June 16th 2021
 functions needed in different parts of the module
 """
 
+from logging import Logger
+
+from mlflow.tracking.fluent import end_run
 from . import _test_w_data_
-from .tensortools import tens
+from .tensortools import splitVec, strIO_from_tens_T, tens
 import torch
 import numpy as np
-from dynwgraphs.dirGraphs1_dynNets import  dirBin1_sequence_ss
+from dynwgraphs.dirGraphs1_dynNets import  dirBin1_sequence_ss, dirSpW1_SD, dirSpW1_sequence_ss
+import itertools
+import copy
+import logging
+logger = logging.getLogger(__name__)
+
+
+def get_default_tv_dgp_par(dgp_type):
+    if dgp_type== "AR":
+        dgp_par = {"type":"AR", "B":0.98, "sigma":0.1, "is_tv":True}
+    
+    return dgp_par
 
 
 def rand_steps(start_val, end_val, Nsteps, T, rand=True):
@@ -109,48 +123,80 @@ def sample_par_vec_dgp_ar(model, unc_mean, B, sigma, T, identify=True):
         return par_T_sample_list
 
 
-def get_dgp_model(dgp_par, Y_reference=None, beta_tv = tens([False]).bool(), X_type = None ):
+def get_dgp_model(N, T, model,  n_ext_reg, size_beta, type_dgp_phi, type_dgp_beta, all_beta_tv,  Y_reference=None):
 
-    N = dgp_par["N"]
-    T = dgp_par["T"]
+    dgp_par = {"N": N, "T": T}
 
-    if Y_reference is None:
-        raise Exception("default choice yet to be defined")
-    else:
-        assert N == Y_reference.shape[0]
-
+    dgp_phi = get_default_tv_dgp_par(type_dgp_phi)
     
+ 
+    dgp_par["phi"] = dgp_phi
+    if n_ext_reg == 0:
+        pass
+    elif n_ext_reg == 1:
+        # combinations of tv and static regression coefficients are not yet allowed
+        dgp_beta = get_default_tv_dgp_par(type_dgp_beta)
         
-    mod_tmp = dirBin1_sequence_ss(torch.zeros(N,N,T)) 
-
-    if dgp_par["model"] =="dirBin1":
-
-        # set reference values for dgp 
-        phi_0 = mod_tmp.start_phi_from_obs(Y_reference)
-        dist_par_un_T_dgp = None
+        dgp_beta["is_tv"] = [all_beta_tv for p in range(n_ext_reg)]
+        dgp_beta["X_type"] = "uniform"
+        if size_beta=="one":
+            dgp_beta["size_beta_t"] = 1
+        elif size_beta=="N":
+            dgp_beta["size_beta_t"] = N
+        elif size_beta=="2N":
+            dgp_beta["size_beta_t"] = 2*N
+        else:
+            raise
+        dgp_beta["beta_0"] = torch.ones(1,1)
+   
+     
     else:
         raise
-        
+ 
+    dgp_par["beta"] = dgp_beta
 
-    if dgp_par["dgp_phi"]["is_tv"]:    
-        if dgp_par["dgp_phi"]["type"] == "AR":
-            B = dgp_par["dgp_phi"]["B"]
-            sigma = dgp_par["dgp_phi"]["sigma"]
+
+    if Y_reference is None:
+        Y_T_test, _, _ =  get_test_w_seq(avg_weight=1e3)
+        Y_reference = (Y_T_test[:N,:N,0]>0).float()
+
+    else:
+        assert N == Y_reference.shape[0]  
+
+    if model =="dirBin1":     
+        mod_tmp = dirBin1_sequence_ss(torch.zeros(N,N,T)) 
+        dist_par_un_T_dgp = None
+
+    elif model =="dirSpW1":    
+        mod_tmp = dirSpW1_sequence_ss(torch.zeros(N,N,T))
+        dist_par_un_T_dgp = [torch.ones(1)]    
+
+    # set reference values for dgp 
+    if "phi_0" in dgp_phi:
+        phi_0 = dgp_phi["phi_0"]
+    else:
+        phi_0 = mod_tmp.start_phi_from_obs(Y_reference)
+
+    if dgp_phi["is_tv"]:    
+        if dgp_phi["type"] == "AR":
+            B = dgp_phi["B"]
+            sigma = dgp_phi["sigma"]
             phi_T_dgp = sample_par_vec_dgp_ar(mod_tmp, phi_0, B, sigma, T)
         else:
             raise
     else:
         phi_T_dgp = [phi_0]
-
-
     
     # dgp for beta
-    if "dgp_beta" in dgp_par:
-        beta_tv = dgp_par["dgp_beta"]["is_tv"]
-        size_beta_t = dgp_par["dgp_beta"]["size_beta_t"]
+    if n_ext_reg >0:
+        if n_ext_reg >1:
+            raise
+
+        beta_tv = dgp_beta["is_tv"]
+        size_beta_t = dgp_beta["size_beta_t"]
 
         #sample regressors
-        if dgp_par["dgp_beta"]["X_type"] == "uniform":
+        if dgp_beta["X_type"] == "uniform":
             if len(beta_tv) != 1:
                 raise
             x_T = np.random.standard_normal(T)
@@ -159,44 +205,47 @@ def get_dgp_model(dgp_par, Y_reference=None, beta_tv = tens([False]).bool(), X_t
             raise
 
         # sample reg coeff
-        dgp_par_beta = dgp_par["dgp_beta"]
-        beta_0 = dgp_par_beta["beta_0"]
-        if beta_0.shape[0] != dgp_par_beta["size_beta_t"]:
+        beta_0 = dgp_beta["beta_0"]
+        if beta_0.shape[0] != dgp_beta["size_beta_t"]:
             raise 
 
-        if any(dgp_par_beta["is_tv"]):
-            if not  all(dgp_par_beta["is_tv"]):
+        if any(dgp_beta["is_tv"]):
+            if not  all(dgp_beta["is_tv"]):
                 raise    
-            if dgp_par_beta["type"] == "AR":
-                B = dgp_par_beta["B"]
-                sigma = dgp_par_beta["sigma"]
-                if dgp_par_beta["size_beta_t"] == 1:
+            if dgp_beta["type"] == "AR":
+                B = dgp_beta["B"]
+                sigma = dgp_beta["sigma"]
+                if dgp_beta["size_beta_t"] == 1:
                     beta_T_dgp = mod_tmp.par_tens_T_to_list(dgpAR(beta_0, B, sigma, T).unsqueeze(dim=1))
-                elif dgp_par_beta["size_beta_t"] >= 1:
+                elif dgp_beta["size_beta_t"] >= 1:
                     beta_T_dgp = sample_par_vec_dgp_ar(mod_tmp, beta_0, B, sigma, T)
                     beta_T_dgp = [b.unsqueeze(1) for b in beta_T_dgp]
-                    
+             
             else:
                 raise
         else:
             beta_T_dgp = [beta_0]
-
     else:
         X_T = None
-        size_beta_t = None
+        size_beta_t = 1
         beta_tv = None
+        beta_T_dgp = None
 
-    print(beta_tv)
-    mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, beta_tv = beta_tv, size_beta_t = size_beta_t) 
+
+    if model =="dirBin1":    
+        mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, beta_tv = beta_tv, size_beta_t = size_beta_t) 
+    
+    elif model =="dirSpW1":    
+
+        mod_dgp = dirSpW1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, beta_tv = beta_tv, size_beta_t = size_beta_t) 
 
     mod_dgp.phi_T = phi_T_dgp
     mod_dgp.beta_T = beta_T_dgp
     mod_dgp.dist_par_un_T = dist_par_un_T_dgp
 
-    mod_dgp.Y_T = mod_dgp.sample_Y_T_from_par_list(T, mod_dgp.phi_T, X_T = mod_dgp.X_T, beta_T=mod_dgp.beta_T, dist_par_un_T=mod_dgp.dist_par_un_T)
-    
     mod_dgp.set_par_dict_to_save()
-    return mod_dgp
+
+    return mod_dgp, dgp_par, Y_reference
 
 
 

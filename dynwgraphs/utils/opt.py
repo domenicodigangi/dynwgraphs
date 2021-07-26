@@ -133,8 +133,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
             loss.backward()
         return loss
 
-    last_print_it=0
-    diag = []
+
     rel_im = np.ones(0)
     n_iter = 0
     loss = closure()
