@@ -78,9 +78,12 @@ def grad_norm_from_list(par_list):
         total_norm = torch.norm(torch.stack([torch.linalg.norm(p.grad.detach()).to(device) for p in parameters]), 2.0).item()
     return total_norm
 
-def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, folder_name="runs_tb", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=100):
+def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, folder_name="runs_tb", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=100, disable_logging=False):
     """given a function and a starting vector, run one of different pox optimizations"""
-
+    if disable_logging:
+        logger.disabled = True
+    else:
+        logger.disabled = False
 
     # do not log tensorboard data for opt runs that are clearly tests
     if max_opt_iter <=5:

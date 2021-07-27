@@ -29,7 +29,13 @@ logger = logging.getLogger(__name__)
 def get_default_tv_dgp_par(dgp_type):
     if dgp_type== "AR":
         dgp_par = {"type":"AR", "B":0.98, "sigma":0.1, "is_tv":True}
+
+    elif dgp_type[:11] == "const_unif_":
+        
+        dgp_par = {"type" : "const_unif", "exp_val": float(dgp_type[11:]), "is_tv":False}
     
+    else:
+        raise
     return dgp_par
 
 
@@ -123,7 +129,7 @@ def sample_par_vec_dgp_ar(model, unc_mean, B, sigma, T, identify=True):
         return par_T_sample_list
 
 
-def get_dgp_model(N, T, model,  n_ext_reg, size_beta, type_dgp_phi, type_dgp_beta, all_beta_tv,  Y_reference=None):
+def get_dgp_model(N, T, model,  n_ext_reg, size_beta_t, type_dgp_phi, type_dgp_beta, all_beta_tv,  Y_reference=None):
 
     dgp_par = {"N": N, "T": T}
 
@@ -132,18 +138,18 @@ def get_dgp_model(N, T, model,  n_ext_reg, size_beta, type_dgp_phi, type_dgp_bet
  
     dgp_par["phi"] = dgp_phi
     if n_ext_reg == 0:
-        pass
+        dgp_beta = None
     elif n_ext_reg == 1:
         # combinations of tv and static regression coefficients are not yet allowed
         dgp_beta = get_default_tv_dgp_par(type_dgp_beta)
         
         dgp_beta["is_tv"] = [all_beta_tv for p in range(n_ext_reg)]
         dgp_beta["X_type"] = "uniform"
-        if size_beta=="one":
+        if size_beta_t=="one":
             dgp_beta["size_beta_t"] = 1
-        elif size_beta=="N":
+        elif size_beta_t=="N":
             dgp_beta["size_beta_t"] = N
-        elif size_beta=="2N":
+        elif size_beta_t=="2N":
             dgp_beta["size_beta_t"] = 2*N
         else:
             raise
@@ -174,6 +180,15 @@ def get_dgp_model(N, T, model,  n_ext_reg, size_beta, type_dgp_phi, type_dgp_bet
     # set reference values for dgp 
     if "phi_0" in dgp_phi:
         phi_0 = dgp_phi["phi_0"]
+    elif dgp_phi["type"] == "const_unif":
+        if n_ext_reg>0:
+            raise
+        if model =="dirBin1":     
+            exp_a = dgp_phi["exp_val"]
+            phi_0_i = 0.5*torch.log(tens(exp_a /(1 - exp_a)))
+            phi_0 = torch.ones(2*N)*phi_0_i
+        else:
+            raise
     else:
         phi_0 = mod_tmp.start_phi_from_obs(Y_reference)
 
@@ -233,11 +248,11 @@ def get_dgp_model(N, T, model,  n_ext_reg, size_beta, type_dgp_phi, type_dgp_bet
 
 
     if model =="dirBin1":    
-        mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, beta_tv = beta_tv, size_beta_t = size_beta_t) 
+        mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, phi_tv=dgp_phi["is_tv"], beta_tv = beta_tv, size_beta_t = size_beta_t) 
     
     elif model =="dirSpW1":    
 
-        mod_dgp = dirSpW1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, beta_tv = beta_tv, size_beta_t = size_beta_t) 
+        mod_dgp = dirSpW1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, phi_tv=dgp_phi["is_tv"], beta_tv = beta_tv, size_beta_t = size_beta_t) 
 
     mod_dgp.phi_T = phi_T_dgp
     mod_dgp.beta_T = beta_T_dgp
