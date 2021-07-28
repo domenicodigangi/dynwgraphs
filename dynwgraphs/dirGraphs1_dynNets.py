@@ -338,7 +338,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     _opt_options_ss_seq_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
     # set default init kwargs to be shared between binary and weighted models
-    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
+    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
             opt_options_ss_t = _opt_options_ss_t_def, 
             opt_options_ss_seq = _opt_options_ss_seq_def):
 
@@ -375,10 +375,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 raise
             self.n_beta_tv = sum(self.beta_tv)
 
-        self.phi_par_init = phi_par_init
+        self.phi_par_init_type = phi_par_init_type
         self.phi_tv = phi_tv
         self.dist_par_tv = dist_par_tv
-
+        self.beta_start_val = beta_start_val
         self.reg_cross_unique = self.check_regressors_cross_uniqueness()
         self.identification_type = ""
         self.check_id_required()
@@ -389,6 +389,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         
         self.data_name = data_name
         
+        self.init_all_par_sequences()
+
+    def init_all_par_sequences(self):        
         if not self.phi_tv:
             self.phi_T = [torch.zeros(self.N*2, requires_grad=True)]
        
@@ -399,34 +402,38 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.dist_par_un_T = None
         else:
             if self.dist_par_tv:
-                self.dist_par_un_T = [torch.zeros(size_dist_par_un_t, requires_grad=True) for t in range(self.T_train)]
+                self.dist_par_un_T = [torch.zeros(self.size_dist_par_un_t, requires_grad=True) for t in range(self.T_train)]
             else:
-                self.dist_par_un_T = [torch.zeros(size_dist_par_un_t, requires_grad=True)]
+                self.dist_par_un_T = [torch.zeros(self.size_dist_par_un_t, requires_grad=True)]
                 
         if self.X_T_train is None:
             self.beta_T = None
-            if (beta_tv is not None):
-                if any(beta_tv):
+            if (self.beta_tv is not None):
+                if any(self.beta_tv):
                     raise
         else:
             if self.any_beta_tv():
-                self.beta_T = [torch.ones(size_beta_t, self.n_reg, requires_grad=True) for t in range(self.T_train)]
+                self.beta_T = [torch.ones(self.size_beta_t, self.n_reg, requires_grad=True) for t in range(self.T_train)]
             else:
-                self.beta_T = [torch.ones(size_beta_t, self.n_reg, requires_grad=True)]
+                self.beta_T = [torch.ones(self.size_beta_t, self.n_reg, requires_grad=True)]
 
             with torch.no_grad():
                 for beta_t in self.beta_T:
-                    beta_t = beta_t * beta_start_val 
+                    beta_t = beta_t * self.beta_start_val 
 
 
         self.start_opt_from_current_par = False
 
-
-   
     def get_obs_t(self, t):
         Y_t = self.Y_T[:,:,t]
         X_t = self.get_reg_t_or_none(t, self.X_T)
         return Y_t, X_t
+
+    def get_train_obs_t(self, t):
+        if t > self.T_train:
+            raise
+        else:
+            return self.get_obs_t(t)
 
     def get_par_t(self, t):
         """
@@ -630,7 +637,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         single snapshot Maximum logLikelihood estimate of phi_t, dist_par_un_t and beta_t
         """
 
-        Y_t, X_t = self.get_obs_t(t)
+        Y_t, X_t = self.get_train_obs_t(t)
         
         par_l_to_opt = [] 
 
@@ -662,7 +669,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def loglike_seq_T(self):
         loglike_T = 0
         for t in range(self.T_train):
-            Y_t, X_t = self.get_obs_t(t)
+            Y_t, X_t = self.get_train_obs_t(t)
             
             phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
             
@@ -674,12 +681,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         with torch.no_grad():
             if self.phi_tv:
                 for t in range(self.T_train):
-                    if self.phi_par_init == "fast_mle":
-                        Y_t, _ = self.get_obs_t(t)
+                    if self.phi_par_init_type == "fast_mle":
+                        Y_t, _ = self.get_train_obs_t(t)
                         self.phi_T[t] = self.start_phi_from_obs(Y_t)
-                    elif self.phi_par_init == "rand":
+                    elif self.phi_par_init_type == "rand":
                         self.phi_T[t] = torch.rand(self.phi_T[t].shape)
-                    elif self.phi_par_init == "zeros":
+                    elif self.phi_par_init_type == "zeros":
                         self.phi_T[t] = torch.zeros(self.phi_T[t].shape)         
 
                     self.phi_T[t].requires_grad = True
@@ -868,6 +875,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
 
     def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_A=None):
+
+        self.init_all_par_sequences()
+
         if max_value_A is None:
             self.max_value_A = self.__max_value_A
         if B0_un is None:
@@ -1111,6 +1121,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             original_opt_n = self.opt_options_sd["opt_n"]
             original_max_opt_iter = self.opt_options_sd["max_opt_iter"]
             warmup_opt_n = "LBFGS"
+            secont_opt_n = "ADAM"
             warmup_n_iter = 150
             logger.warn(f"An error occurred in opt using {self.opt_options_sd['opt_n']}. Trying to warm up with  {warmup_opt_n} for {warmup_n_iter} opt steps")
             # if error, reset parameters and change opt algo
@@ -1118,9 +1129,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.opt_options_sd["opt_n"] = warmup_opt_n 
             self.opt_options_sd["max_opt_iter"] = warmup_n_iter
             self.estimate_sd(**kwargs)
-            logger.warn(f"Trying again with {original_opt_n}")
+            logger.warn(f"Trying again with {secont_opt_n}")
             
-            self.opt_options_sd["opt_n"] = original_opt_n 
+            self.opt_options_sd["opt_n"] = secont_opt_n 
             self.opt_options_sd["max_opt_iter"] = original_max_opt_iter
             return self.estimate_sd(**kwargs)
 
@@ -1371,7 +1382,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
     
     def check_exp_vals(self, t,):
         
-        Y_t, X_t = self.get_obs_t(t)
+        Y_t, X_t = self.get_train_obs_t(t)
         phi_t, _, beta_t = self.get_par_t(t)
         EYcond_mat = self.cond_exp_Y(phi_t, beta=beta_t, X_t=X_t)
         EYcond_mat = putZeroDiag(EYcond_mat)
@@ -1635,7 +1646,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
         return out.clone()
 
     def check_exp_vals(self, t):
-        Y_t, X_t = self.get_obs_t(t)
+        Y_t, X_t = self.get_train_obs_t(t)
         phi_t, _, beta_t = self.get_par_t(t)
 
         degIO = strIO_from_mat(Y_t)
