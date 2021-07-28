@@ -334,8 +334,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     Single snapshot sequence of, binary or weighted, fitness models with external regressors. 
     """
 
-    _opt_options_ss_t_def = {"opt_n" :"ADAM", "max_opt_iter" :1000, "lr" :0.01}
-    _opt_options_ss_seq_def = {"opt_n" :"ADAM", "max_opt_iter" :5000, "lr" :0.01}
+    _opt_options_ss_t_def = {"opt_n" :"ADAMHD", "max_opt_iter" :1000, "lr" :0.01}
+    _opt_options_ss_seq_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
     # set default init kwargs to be shared between binary and weighted models
     def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
@@ -419,7 +419,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                     beta_t = beta_t * beta_start_val 
 
 
-        self.optimized_once = False
+        self.start_opt_from_current_par = False
 
 
    
@@ -757,12 +757,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         
         self.run_checks()
 
-        if not self.optimized_once:
+        if not self.start_opt_from_current_par:
             self.init_phi_T_from_obs()
 
         self.set_par_dict_to_save()
 
-        self.optimized_once = True
+        self.start_opt_from_current_par = True
 
         def obj_fun():
             return  - self.loglike_seq_T()
@@ -836,7 +836,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                         raise
                         
         self.par_dict_to_save = dict
-        self.optimized_once = True
+        self.start_opt_from_current_par = True
 
 
 class dirGraphs_SD(dirGraphs_sequence_ss):
@@ -846,7 +846,12 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         init_sd_type : "unc_mean", "est_joint", "est_ss_before"
     """
 
-    __opt_options_sd_def = {"opt_n" :"ADAMHD", "max_opt_iter" :3500, "lr" :0.01}
+    __opt_options_sd_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
+
+    __max_value_A = 20
+    __B0 = torch.ones(1) * 0.98
+    __A0 = torch.ones(1) * 0.0001
+
 
     def __init__(self, *args, init_sd_type = "unc_mean", rescale_SD = True, opt_options_sd = __opt_options_sd_def, **kwargs ):
 
@@ -857,11 +862,18 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         self.rescale_SD = rescale_SD
         self.init_sd_type = init_sd_type
-   
-        self.max_value_A = 20
-        self.B0 = self.re2un_B_par( torch.ones(1) * 0.98)
-        self.A0 = self.re2un_A_par( torch.ones(1) * 0.0001)
 
+        self.init_all_stat_par()
+   
+        
+
+    def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_A=None):
+        if max_value_A is None:
+            self.max_value_A = self.__max_value_A
+        if B0_un is None:
+            self.B0_un = self.re2un_B_par( torch.ones(1) * self.__B0)
+        if A0_un is None:
+            self.A0_un = self.re2un_A_par( torch.ones(1) * self.__A0)
 
         if self.phi_tv:
             self.sd_stat_par_un_phi = self.define_stat_un_sd_par_dict(self.phi_T[0].shape)    
@@ -872,10 +884,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         if self.beta_T is not None:    
             if self.any_beta_tv():
                 self.sd_stat_par_un_beta = self.define_stat_un_sd_par_dict(self.beta_T[0].shape)    
+        
+        self.start_opt_from_current_par = False
             
-                
-                
-
     def check_id_required(self):
 
         if any(self.reg_cross_unique):
@@ -889,7 +900,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
     def define_stat_un_sd_par_dict(self, n_sd_par):
 
-        sd_stat_par_dict = {"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*self.B0),"A" :nn.Parameter(torch.ones(n_sd_par)*self.A0)}
+        sd_stat_par_dict = {"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*self.B0_un),"A" :nn.Parameter(torch.ones(n_sd_par)*self.A0_un)}
 
         if self.init_sd_type != "unc_mean":
             sd_stat_par_dict["init_val"] = nn.Parameter(torch.zeros(n_sd_par))
@@ -1072,9 +1083,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         self.run_checks()
 
-        if not self.optimized_once:
+        if not self.start_opt_from_current_par:
             self.init_static_sd_from_obs()
-        self.optimized_once = True
+        self.start_opt_from_current_par = True
 
         if self.init_sd_type == "est_ss_before":
             # the inititial value of sd tv par is etimated beforehand on a single snapshot
@@ -1089,10 +1100,30 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
           
         run_name = self.info_filter()
 
-        return optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold, log_interval=1)
-
+        return optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold, log_interval=100)
+    
+    
+    
     def estimate(self, **kwargs):
-        return self.estimate_sd(**kwargs)
+        try:
+            return self.estimate_sd(**kwargs)
+        except:
+            original_opt_n = self.opt_options_sd["opt_n"]
+            original_max_opt_iter = self.opt_options_sd["max_opt_iter"]
+            warmup_opt_n = "LBFGS"
+            warmup_n_iter = 150
+            logger.warn(f"An error occurred in opt using {self.opt_options_sd['opt_n']}. Trying to warm up with  {warmup_opt_n} for {warmup_n_iter} opt steps")
+            # if error, reset parameters and change opt algo
+            self.init_all_stat_par()
+            self.opt_options_sd["opt_n"] = warmup_opt_n 
+            self.opt_options_sd["max_opt_iter"] = warmup_n_iter
+            self.estimate_sd(**kwargs)
+            logger.warn(f"Trying again with {original_opt_n}")
+            
+            self.opt_options_sd["opt_n"] = original_opt_n 
+            self.opt_options_sd["max_opt_iter"] = original_max_opt_iter
+            return self.estimate_sd(**kwargs)
+
 
     def run(self, est_flag, l_s_path  ):
         if est_flag:
@@ -1106,7 +1137,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def init_par_from_model_without_beta(self, mod_no_beta):
         self.sd_stat_par_un_phi = copy.deepcopy(mod_no_beta.sd_stat_par_un_phi)
         self.dist_par_un_T = copy.deepcopy(mod_no_beta.dist_par_un_T)
-        self.optimized_once = True
+        self.start_opt_from_current_par = True
         self.roll_sd_filt()
         assert mod_no_beta.loglike_seq_T() == self.loglike_seq_T()
 
@@ -1155,7 +1186,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
                 self.beta_T = copy.deepcopy(lower_model.beta_T)
                             
 
-        self.optimized_once = True
+        self.start_opt_from_current_par = True
         
         self.roll_sd_filt()
         lower_model.roll_sd_filt()
@@ -1164,7 +1195,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def init_par_from_model_const_beta(self, mod_no_beta):
         self.sd_stat_par_un_phi = copy.deepcopy(mod_no_beta.sd_stat_par_un_phi)
         self.dist_par_un_T = copy.deepcopy(mod_no_beta.dist_par_un_T)
-        self.optimized_once = True
+        self.start_opt_from_current_par = True
         self.roll_sd_filt()
         assert mod_no_beta.loglike_seq_T() == self.loglike_seq_T()
 
