@@ -153,7 +153,7 @@ def get_dgp_model(N, T, model,  n_ext_reg, size_beta_t, type_dgp_phi, type_dgp_b
             dgp_beta["size_beta_t"] = 2*N
         else:
             raise
-        dgp_beta["beta_0"] = torch.ones(1,1)
+        beta_0 = 1 + torch.randn(dgp_beta["size_beta_t"], n_ext_reg)
    
      
     else:
@@ -220,7 +220,7 @@ def get_dgp_model(N, T, model,  n_ext_reg, size_beta_t, type_dgp_phi, type_dgp_b
             raise
 
         # sample reg coeff
-        beta_0 = dgp_beta["beta_0"]
+   
         if beta_0.shape[0] != dgp_beta["size_beta_t"]:
             raise 
 
