@@ -37,31 +37,6 @@ from torch.utils.tensorboard import SummaryWriter
 import logging
 logger = logging.getLogger(__name__)
 
-def store_and_print_opt_info(i, last_print_it, max_opt_iter, loss, unPar, rel_improv, grad_norm, lr, diag, print_every,
-                             roll_rel_im, no_improv_count, print_par, print_fun=None):
-
-    grad_mean = unPar.grad.abs().mean().item()
-    num_par = unPar.shape[0]
-    #store info and Print them when required
-    if print_fun is not None:
-        fun_val = print_fun(unPar.clone().detach())
-        diag.append((loss.item(), fun_val.item(), grad_norm, grad_mean, roll_rel_im))
-    else:
-        diag.append((loss.item(), grad_norm, grad_mean, roll_rel_im))
-    tmp = unPar.data
-    if i//print_every > last_print_it:
-        last_print_it = i//print_every
-        if print_fun is not None:
-            print((i, max_opt_iter, loss.item(), grad_norm, grad_mean, rel_improv, roll_rel_im, no_improv_count,
-                   num_par, lr, fun_val))
-        elif print_par:
-            print((i, max_opt_iter, loss.item(), grad_norm, grad_mean, rel_improv, roll_rel_im, no_improv_count,
-                   num_par, lr, tmp))
-        else:
-            print((i, max_opt_iter, loss.item(), grad_norm, grad_mean, rel_improv, roll_rel_im, no_improv_count,
-                    num_par, lr))
-    return last_print_it
-
 
 def get_rel_improv(prev_loss, loss):
     if (loss != 0): 
@@ -190,7 +165,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     hparams_dict["actual_n_opt_iter"]= n_iter
     hparams_dict["max_opt_iter"]= max_opt_iter
 
-    print(hparams_dict)
+    logger.info(f"opt parameters : {hparams_dict}")
     final_loss = closure()
     logger.info(f"final loss {final_loss.item()}")
     if tb_log_flag:
