@@ -298,8 +298,6 @@ class dirGraphs_funs(nn.Module):
             beta_t = self.get_t_or_t0(t, beta_tv, beta_T) 
             dist_par_un_t = self.get_t_or_t0(t, dist_par_tv, dist_par_un_T) 
             
-
-
             dist = self.dist_from_pars(phi_t , beta_t, X_t, dist_par_un=dist_par_un_t)
 
             Y_T_sampled[:, :, t]  = dist.sample()
@@ -882,8 +880,12 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.max_value_A = self.__max_value_A
         if B0_un is None:
             self.B0_un = self.re2un_B_par( torch.ones(1) * self.__B0)
+        else:
+            self.B0_un = self.re2un_B_par( torch.ones(1) * B0_un)
         if A0_un is None:
             self.A0_un = self.re2un_A_par( torch.ones(1) * self.__A0)
+        else:
+            self.A0_un = self.re2un_A_par( torch.ones(1) * A0_un)
 
         if self.phi_tv:
             self.sd_stat_par_un_phi = self.define_stat_un_sd_par_dict(self.phi_T[0].shape)    
@@ -1048,7 +1050,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         self.par_dict_to_save = {}
         # define list of parameters to be optimized
         self.par_l_to_opt = [] 
-
+       
         
         if self.phi_tv:
             self.par_dict_to_save["sd_stat_par_un_phi"] = self.sd_stat_par_un_phi
@@ -1108,33 +1110,35 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.roll_sd_filt()
             return - self.loglike_seq_T()
           
-        run_name = self.info_filter()
+      
+        logger.info(f"setting unconditional mean to reasonable value ")
+        mean_mat_mod = dirSpW1_sequence_ss(self.Y_T.mean(dim=(2)).unsqueeze(dim=2))
+        mean_mat_mod.estimate_ss_t(0, True, False, False)
+        start_unc_mean = mean_mat_mod.phi_T[0]
+        self.set_unc_mean(start_unc_mean, self.sd_stat_par_un_phi)
 
+        
+        run_name = self.info_filter()
+        
         return optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold, log_interval=100)
-    
-    
-    
+        
     def estimate(self, **kwargs):
         try:
             return self.estimate_sd(**kwargs)
         except:
             original_opt_n = self.opt_options_sd["opt_n"]
             original_max_opt_iter = self.opt_options_sd["max_opt_iter"]
-            warmup_opt_n = "LBFGS"
-            secont_opt_n = "ADAM"
-            warmup_n_iter = 150
-            logger.warn(f"An error occurred in opt using {self.opt_options_sd['opt_n']}. Trying to warm up with  {warmup_opt_n} for {warmup_n_iter} opt steps")
+            secont_opt_n = "ADAMHD"
+            second_n_iter = 5000
+            second_lr = 0.0001
+            logger.warning(f"An error occurred in opt using {self.opt_options_sd['opt_n']}. Trying with  {secont_opt_n} for {second_n_iter} opt steps and lr = {second_lr}")
             # if error, reset parameters and change opt algo
             self.init_all_stat_par()
-            self.opt_options_sd["opt_n"] = warmup_opt_n 
-            self.opt_options_sd["max_opt_iter"] = warmup_n_iter
-            self.estimate_sd(**kwargs)
-            logger.warn(f"Trying again with {secont_opt_n}")
-            
-            self.opt_options_sd["opt_n"] = secont_opt_n 
-            self.opt_options_sd["max_opt_iter"] = original_max_opt_iter
+            self.opt_options_sd["opt_n"] = secont_opt_n
+            self.opt_options_sd["max_opt_iter"] = second_n_iter
+            self.opt_options_sd["lr"] = second_lr
+ 
             return self.estimate_sd(**kwargs)
-
 
     def run(self, est_flag, l_s_path  ):
         if est_flag:
@@ -1256,7 +1260,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 # Weighted Graphs
 
 class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
-    
 
     def __init__(self, *args, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, **kwargs):
 
@@ -1295,12 +1298,9 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         dist_par_re = self.link_dist_par(dist_par_un, N, A_t=A_t)
         if self.distr == 'gamma':
             EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t)
-            if A_t is None:
-                rate = torch.div(dist_par_re, EYcond_mat)
-                distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
-            else:# if A_t is given, we already took into account the dimension of dist_par above when restricting it
-                rate = torch.div(dist_par_re, EYcond_mat[A_t])
-                distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
+           #we already took into account the dimension of dist_par above when restricting it
+            rate = torch.div(dist_par_re, EYcond_mat[A_t])
+            distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
 
         elif self.distr == 'lognormal':
             log_EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t, ret_log=True)
@@ -1321,9 +1321,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         Y_t = putZeroDiag(Y_t)
         A_t = Y_t > 0
         N = A_t.shape[0]
-        if dist_par_un is None:
-            dist_par_un = self.dist_par_un_start_val()
-
+      
         if (self.distr == 'gamma') and (self.like_type in [0, 1]):# if non torch computation of the likelihood is required
             # Restrict the distribution parameters.
             dist_par_re = self.link_dist_par(dist_par_un, N, A_t)
@@ -1359,8 +1357,6 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         take as input the unrestricted version of distribution parameters (the ones that we optimize)
         return their restricted versions, compatible with the different distributions
         """
-        if self.avoid_ovflw_fun_flag:
-            dist_par_un = soft_lu_bound(dist_par_un, l_limit=self.ovflw_exp_L_limit, u_limit=self.ovflw_exp_U_limit)
 
         if (self.distr == 'gamma') | (self.distr == 'lognormal'):
             if dist_par_un.shape[0] == 1:
@@ -1369,6 +1365,11 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
                 dist_par_re = torch.exp(dist_par_un + dist_par_un.unsqueeze(1))
                 if A_t is not None:
                     dist_par_re = dist_par_re[A_t]
+
+        limit_dist_par_re = True
+        if limit_dist_par_re:
+            dist_par_re = soft_lu_bound(dist_par_re, l_limit=0, u_limit=10)
+
         return dist_par_re
 
     def dist_par_un_start_val(self):
@@ -1403,6 +1404,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
 
 class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
+
 
     def __init__(self, *args, **kwargs):
 
@@ -1489,7 +1491,9 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         
         self.roll_sd_filt()
 
-
+    # in case I want to have a different starting point for the optim
+    # def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_A=None):
+    #     super().init_all_stat_par(A0_un=0.0000001)
 
 # Binary Graphs
 
@@ -1560,12 +1564,12 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
                                      diffDegs[diffDegs != 0])
 
             if not torch.isfinite(avgParStepI):
-                print(((par_i  - par_i[imin])[diffDegs != 0]) / diffDegs[diffDegs != 0])
+                logger.error(((par_i  - par_i[imin])[diffDegs != 0]) / diffDegs[diffDegs != 0])
                 raise
             diffDegs = degO[degO  != 0] - degO[degO != 0][omin]
             avgParStepO = torch.mean((par_o[degO != 0] - par_o[degO != 0][omin])[diffDegs != 0] / diffDegs[diffDegs != 0])
             if not torch.isfinite(avgParStepO):
-                print(((par_i - par_i[imin])[diffDegs != 0]) / diffDegs[diffDegs != 0])
+                logger.error(((par_i - par_i[imin])[diffDegs != 0]) / diffDegs[diffDegs != 0])
                 raise
             # subtract a multiple of this average step to fitnesses of smallest node
             zero_deg_par_i = par_i[degI != 0][imin] - avgParStepI * degI[degI != 0][imin]
@@ -1666,6 +1670,10 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
 
     def info_filter(self):
         return self.model_class + super().info_filter()
+
+    def eval_prediction(self, Y_tp1, phi, beta, X_tp1):
+        pass
+
 
 class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
