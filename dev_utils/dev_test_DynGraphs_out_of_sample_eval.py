@@ -81,6 +81,7 @@ mod_sd_w.opt_options_sd["max_opt_iter"] = sim_args["max_opt_iter"]
 
 #%%
 
+import sklearn
 
 
 # %%

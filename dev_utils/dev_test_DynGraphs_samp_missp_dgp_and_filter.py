@@ -28,7 +28,7 @@ from dynwgraphs.utils.dgps import get_test_w_seq, get_dgp_model, dgpAR
 dgp_bin_set = {"N" : 50, \
         "T" : 100, \
         "model":"dirBin1", \
-        "type_dgp_phi": "AR", \
+        "type_dgp_phi": "const_unif_0.9", \
         "n_ext_reg": 0, \
         "size_beta_t": "2N", \
         "type_dgp_beta": "AR", \
@@ -92,18 +92,37 @@ sim_args  = {"max_opt_iter": 5000, "tb_fold": "./tb_logs"}
 
 mod_ss_w = dirSpW1_sequence_ss(mod_dgp_w.Y_T, **filt_kwargs, beta_start_val = 1)
 mod_ss_w.opt_options_ss_seq["max_opt_iter"] = sim_args["max_opt_iter"]
-_, h_par_opt = mod_ss_w.estimate_ss_seq_joint(tb_save_fold=sim_args["tb_fold"])
+# _, h_par_opt = mod_ss_w.estimate_ss_seq_joint(tb_save_fold=sim_args["tb_fold"])
 
 #%% Test sd w estimates
 
 
 mod_sd_w = dirSpW1_SD(mod_dgp_w.Y_T, **filt_kwargs)
 mod_sd_w.opt_options_sd["max_opt_iter"] = sim_args["max_opt_iter"]
-mod_sd_w.opt_options_sd["opt_n"] = "ADAMHD" 
+mod_sd_w.opt_options_sd["opt_n"] = "ADAM" 
 
-_, h_par_opt = mod_sd_w.estimate(tb_save_fold=sim_args["tb_fold"])
+mod_sd_w.opt_options_sd["max_opt_iter"] = 300
+mod_sd_w.opt_options_sd["max_opt_iter_warmup"] = 0
+_, h_par_opt = mod_sd_w.estimate_sd(tb_save_fold=sim_args["tb_fold"])
 
-mod_sd_w.sd_stat_par_un_phi["A"]
+mod_sd_w.un2re_B_par(mod_sd_w.sd_stat_par_un_phi["B"].detach())
+mod_sd_w.un2re_A_par(mod_sd_w.sd_stat_par_un_phi["A"].detach())
+mod_sd_w.get_unc_mean(mod_sd_w.sd_stat_par_un_phi)
+mod_sd_w.link_dist_par(mod_sd_w.dist_par_un_T[0], N=mod_sd_w.N)
+
+mod_sd_w.plot_phi_T()
+mod_sd_w.loglike_seq_T()
+mod_dgp_w.cond_exp_Y(mod_sd_w.get_unc_mean(mod_sd_w.sd_stat_par_un_phi), beta=None, X_t=None).sum()
+
+
+
+mean_mat_mod = dirSpW1_sequence_ss(mod_dgp_w.Y_T.mean(dim=(2)).unsqueeze(dim=2))
+mean_mat_mod.estimate_ss_t(0, True, False, False)
+start_unc_mean = mean_mat_mod.phi_T[0]
+mod_sd_w.set_unc_mean(start_unc_mean, mod_sd_w.sd_stat_par_un_phi)
+
+
+#%%
 mod_ss_w.dist_par_un_T
 mod_sd_w.dist_par_un_T
 
