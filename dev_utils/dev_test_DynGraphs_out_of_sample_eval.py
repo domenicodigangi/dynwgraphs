@@ -63,8 +63,8 @@ mod_dgp_w.Y_T = mod_dgp_w.sample_Y_T(mod_dgp_w.bin_mod.Y_T>0)
 
 
 #%% define filters 
-filt_kwargs = {"size_beta_t":mod_dgp_bin.size_beta_t, "X_T" : mod_dgp_bin.X_T, "beta_tv":mod_dgp_bin.beta_tv}
-sim_args  = {"max_opt_iter": 15000, "tb_fold": "./tb_logs"}
+filt_kwargs = {"size_beta_t":mod_dgp_bin.size_beta_t, "X_T" : mod_dgp_bin.X_T, "beta_tv":mod_dgp_bin.beta_tv, "T_train":95}
+sim_args  = {"max_opt_iter": 150, "tb_fold": "./tb_logs"}
 
 
 mod_ss_bin = dirBin1_sequence_ss(mod_dgp_bin.Y_T, **filt_kwargs, beta_start_val = 1)
@@ -72,16 +72,26 @@ mod_ss_bin.opt_options_ss_seq["max_opt_iter"] = sim_args["max_opt_iter"]
 mod_sd_bin = dirBin1_SD(mod_dgp_bin.Y_T, **filt_kwargs)
 mod_sd_bin.opt_options_sd["max_opt_iter"] = sim_args["max_opt_iter"]
 
-filt_kwargs = {"size_beta_t":mod_dgp_w.size_beta_t, "X_T" : mod_dgp_w.X_T, "beta_tv":mod_dgp_w.beta_tv}
+
 mod_ss_w = dirSpW1_sequence_ss(mod_dgp_w.Y_T, **filt_kwargs, beta_start_val = 1)
 
 mod_sd_w = dirSpW1_SD(mod_dgp_w.Y_T, **filt_kwargs)
 mod_sd_w.opt_options_sd["max_opt_iter"] = sim_args["max_opt_iter"]
-
+# mod_sd_w.estimate()
 
 #%%
+# mod_sd_bin.estimate()
 
-import sklearn
+mod_sd_bin.out_of_sample_eval()
+mod_sd_w.out_of_sample_eval()
+
+mod_sd_bin.plot_phi_T()
+
+
+mod_sd_bin.get_out_of_sample_obs_and_pred()
+mod_sd_w.get_out_of_sample_obs_and_pred(only_present=True)
+
+
 
 
 # %%

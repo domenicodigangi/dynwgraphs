@@ -23,11 +23,12 @@ from matplotlib import pyplot as plt
 from .utils.tensortools import splitVec, tens, putZeroDiag, putZeroDiag_T, soft_lu_bound, strIO_from_mat, strIO_from_tens_T
 from .utils.opt import optim_torch
 import itertools
+from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_error, mean_absolute_percentage_error, mean_squared_log_error, r2_score
+
 from pathlib import Path
 from torch.autograd import grad
 import torch.nn as nn
 import logging
-
 logger = logging.getLogger(__name__)
 
 
@@ -123,6 +124,9 @@ class dirGraphs_funs(nn.Module):
         else:
             return torch.exp(log_Econd_mat_restr)  
             #  putZeroDiag(torch.exp(log_Econd_mat))
+
+    def exp_Y(self, phi, beta, X_t):
+        pass
 
     def identify_io_par_to_be_sum(self, phi, id_type):
         """ enforce an identification condition on input and output parameters parameters for a single snapshot
@@ -345,26 +349,26 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
         
         self.Y_T = Y_T
+        self.T_all = self.Y_T.shape[2]
+        # T_train is the index of the last obs in the training set
         if T_train is not None:
-            self.Y_T_train = Y_T[:,:,:T_train]
+            self.T_train = T_train
         else:
-            self.Y_T_train = Y_T
+            self.T_train = self.T_all
+
+        # T_test is the index of the first obs in the test (validation) set
+        self.T_test = self.T_train+1 
             
-        self.N = self.Y_T_train.shape[0]
-        self.T_train = self.Y_T_train.shape[2]
+        self.N = self.Y_T.shape[0]
 
         self.X_T = X_T
-        if (T_train is not None) and (X_T is not None):
-            self.X_T_train = X_T[:,:,:T_train]
-        else:
-            self.X_T_train = X_T
-        
-        if self.X_T_train is None:
+
+        if self.X_T is None:
             self.n_reg = 0
             self.beta_tv = None
             self.n_beta_tv = None
         else:
-            self.n_reg = self.X_T_train.shape[2]
+            self.n_reg = self.X_T.shape[2]
             if type(beta_tv) == bool:
                 self.beta_tv = tens([beta_tv for p in range(self.n_reg)] ).bool()
             elif type(beta_tv) in [list, torch.Tensor]:
@@ -394,24 +398,24 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.phi_T = [torch.zeros(self.N*2, requires_grad=True)]
        
         else:
-            self.phi_T = [torch.zeros(self.N*2, requires_grad=True) for t in range(self.T_train)]
+            self.phi_T = [torch.zeros(self.N*2, requires_grad=True) for t in range(self.T_all)]
 
         if self.size_dist_par_un_t is None:
             self.dist_par_un_T = None
         else:
             if self.dist_par_tv:
-                self.dist_par_un_T = [torch.zeros(self.size_dist_par_un_t, requires_grad=True) for t in range(self.T_train)]
+                self.dist_par_un_T = [torch.zeros(self.size_dist_par_un_t, requires_grad=True) for t in range(self.T_all)]
             else:
                 self.dist_par_un_T = [torch.zeros(self.size_dist_par_un_t, requires_grad=True)]
                 
-        if self.X_T_train is None:
+        if self.X_T is None:
             self.beta_T = None
             if (self.beta_tv is not None):
                 if any(self.beta_tv):
                     raise
         else:
             if self.any_beta_tv():
-                self.beta_T = [torch.ones(self.size_beta_t, self.n_reg, requires_grad=True) for t in range(self.T_train)]
+                self.beta_T = [torch.ones(self.size_beta_t, self.n_reg, requires_grad=True) for t in range(self.T_all)]
             else:
                 self.beta_T = [torch.ones(self.size_beta_t, self.n_reg, requires_grad=True)]
 
@@ -422,9 +426,15 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.start_opt_from_current_par = False
 
+    def get_Y_t(self, t):
+        return self.Y_T[:,:,t]
+
+    def get_X_t(self, t):
+        return self.get_reg_t_or_none(t, self.X_T)
+        
     def get_obs_t(self, t):
-        Y_t = self.Y_T[:,:,t]
-        X_t = self.get_reg_t_or_none(t, self.X_T)
+        Y_t = self.get_Y_t(t)
+        X_t = self.get_X_t(t)
         return Y_t, X_t
 
     def get_train_obs_t(self, t):
@@ -438,8 +448,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         If a paramter is time varying, return the parameter at the t-th time step, if not return the only time step present. 
         beta_T can be None, in that case return beta_t = None
         """
-        if not (0 <= t <= self.T_train) : 
-            raise Exception(f"Requested t = {t}, T = {self.T_train} ")
+       
 
         phi_t = self.get_t_or_t0(t, self.phi_tv, self.phi_T)
 
@@ -449,6 +458,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
        
         return phi_t, dist_par_un_t, beta_t
 
+    def get_train_Y_T(self):
+        Y_T_train =  self.Y_T[:,:, :self.T_train]
+        return Y_T_train
+    
     def get_seq_latent_par(self):
         phi_T_data = self.par_list_to_matrix_T(self.phi_T) 
         
@@ -509,7 +522,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.phi_T[t] = torch.cat((phi_i, phi_o))
 
     def get_n_obs(self):
-        return self.Y_T_train.numel()
+        return self.Y_T[:, :, :self.T_train].numel()
 
     def get_n_par(self):
         n_par = 0
@@ -562,13 +575,13 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             phi_t_id_0 = self.identify_phi_io(phi_t)
                         
             beta_t = self.beta_T[t][:, self.reg_cross_unique]
-            x_t = self.X_T_train[0, 0, self.reg_cross_unique, t]
+            x_t = self.get_X_t(t)[0, 0, self.reg_cross_unique]
             self.phi_T[t][:], self.beta_T[t][:, self.reg_cross_unique] = self.identify_phi_io_beta(phi_t_id_0, beta_t, x_t )    
 
             self.phi_T[t] = phi_t_id_0
 
     def identify_sequence_phi_T_beta_const(self):    
-        x_T = self.X_T_train[0, 0, self.reg_cross_unique, :].squeeze()
+        x_T = self.X_T[0, 0, self.reg_cross_unique, :].squeeze()
         phi_o_T_sum = sum([phi[self.N:].mean() for phi in self.phi_T ])
         x_T_sum = x_T.sum()
         for t in range(self.T_train):
@@ -598,10 +611,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def check_regressors_seq_shape(self):
         """
         check that:
-            - X_T_train is N x N x n_reg x T and 
+            - X_T is N x N x n_reg x T and 
             - beta_T is size_beta x n_reg x (T or 1) and 
         """
-        if self.check_reg_and_coeff_pres(self.X_T_train, self.beta_T):
+        if self.check_reg_and_coeff_pres(self.X_T, self.beta_T):
             for t in range(self.T_train-1):
                 _, X_t = self.get_obs_t(t)
                 _, _, beta_t = self.get_par_t(t)
@@ -614,7 +627,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         """
         reg_cross_unique = torch.zeros(self.n_reg, dtype=bool)
         for k in range(self.n_reg):
-            unique_flag_T = [(self.X_T_train[:,:,k,t].unique().shape[0] == 1) for t in range(self.T_train)]
+            unique_flag_T = [(self.get_X_t(t)[:,:,k].unique().shape[0] == 1) for t in range(self.T_train)]
             if all(unique_flag_T):
                 reg_cross_unique[k] = True
             elif np.all(unique_flag_T) > 0.1:
@@ -696,11 +709,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         for phi in self.phi_T:
             phi.requires_grad=True
 
-
-
     def plot_phi_T(self, x=None, i=None, fig_ax=None):
         if x is None:
-            x = np.array(range(self.T_train))
+            x = np.array(range(self.T_all))
         phi_T, _, _ = self.get_seq_latent_par()
         if phi_T.shape[1] ==1:
             phi_T = phi_T.repeat_interleave(x.shape[0], dim=1)
@@ -717,6 +728,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             fig, ax = fig_ax
         ax[0].plot(x, phi_i_T.T)
         ax[1].plot(x, phi_o_T.T)
+        for a in ax:
+            a.vlines(self.T_train, a.get_ylim()[0], a.get_ylim()[1], colors = "r", linestyles="dashed")
         return fig, ax
     
     def plot_beta_T(self, x=None, fig_ax = None):
@@ -1004,7 +1017,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         w_implied_by_unc_mean = (1-B) * unc_mean 
         sd_stat_par_un["w"] = nn.parameter.Parameter(w_implied_by_unc_mean, requires_grad=True)
         
-    def roll_sd_filt(self):
+    def roll_sd_filt(self, T_last):
 
         """Use the static parameters and the observations, that are attributes of the class, to fiter, and update, the dynamical parameters with  score driven dynamics.
         """
@@ -1026,10 +1039,13 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         else:
             raise
 
-        for t in range(1, self.T_train):
+        for t in range(1, T_last):
             self.update_dynw_par(t)
 
         self.identify_sequence()
+
+    def roll_sd_filt_train(self):
+        self.roll_sd_filt(self.T_train)
 
     def append_all_par_dict_to_list(self, par_dict, par_list, keys_to_exclude=[]):
         for k, v in par_dict.items():
@@ -1107,7 +1123,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         self.set_par_dict_to_save()
 
         def obj_fun():
-            self.roll_sd_filt()
+            self.roll_sd_filt_train()
             return - self.loglike_seq_T()
           
       
@@ -1153,7 +1169,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         self.sd_stat_par_un_phi = copy.deepcopy(mod_no_beta.sd_stat_par_un_phi)
         self.dist_par_un_T = copy.deepcopy(mod_no_beta.dist_par_un_T)
         self.start_opt_from_current_par = True
-        self.roll_sd_filt()
+        self.roll_sd_filt_train()
         assert mod_no_beta.loglike_seq_T() == self.loglike_seq_T()
 
     def init_par_from_model_with_const_par(self, lower_model):
@@ -1203,15 +1219,15 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         self.start_opt_from_current_par = True
         
-        self.roll_sd_filt()
-        lower_model.roll_sd_filt()
+        self.roll_sd_filt_train()
+        lower_model.roll_sd_filt_train()
         logger.info(f"lower model likelihood {lower_model.loglike_seq_T()}, model with sd par loglike {self.loglike_seq_T()}")
 
     def init_par_from_model_const_beta(self, mod_no_beta):
         self.sd_stat_par_un_phi = copy.deepcopy(mod_no_beta.sd_stat_par_un_phi)
         self.dist_par_un_T = copy.deepcopy(mod_no_beta.dist_par_un_T)
         self.start_opt_from_current_par = True
-        self.roll_sd_filt()
+        self.roll_sd_filt_train()
         assert mod_no_beta.loglike_seq_T() == self.loglike_seq_T()
 
     def get_n_par(self):
@@ -1254,7 +1270,49 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     def load_par(self, load_path):
         super().load_par(load_path)
-        self.roll_sd_filt()
+        self.roll_sd_filt_train()
+
+    def get_forecast(self, t):
+        if t<= self.T_train:
+            logger.error(f"Should forecast time steps not in the train set T_train {self.T_train}, required {t}")
+            raise
+     
+        # Score driven parameters at time t are actually forecasts, since they are computed using obs up to t-1
+        phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
+        X_t = self.get_X_t(t)
+        
+        F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
+        return F_A_t
+
+    def get_out_of_sample_obs_and_pred(self, inds_keep_subset = None, only_present=False):
+
+        if inds_keep_subset is None:
+            inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
+        else:
+            if only_present:
+                raise
+
+        self.roll_sd_filt(self.T_all)
+
+        F_Y_vec_all = np.zeros(0)
+        Y_vec_all = np.zeros(0)
+
+        for t in range(self.T_test, self.T_all): 
+            
+            Y_t = self.get_Y_t(t)
+            Y_vec_t = Y_t.detach().numpy()
+            F_Y_vec_t = self.get_forecast(t).detach().numpy()
+
+            if only_present:
+                inds_keep_subset = Y_t>0            
+            Y_vec_all = np.append(Y_vec_all, Y_vec_t[inds_keep_subset])
+            F_Y_vec_all = np.append(F_Y_vec_all, F_Y_vec_t[inds_keep_subset])
+            
+        return Y_vec_all, F_Y_vec_all
+
+    def out_of_sample_eval(self):
+        pass
+
 
 
 # Weighted Graphs
@@ -1267,6 +1325,9 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
         self.model_class = "dirSpW1"
         self.bin_mod = dirBin1_sequence_ss(torch.zeros(10, 10, 20))
+
+    def exp_Y(self, phi, beta, X_t):
+        return self.cond_exp_Y(phi, beta=beta, X_t=X_t)
 
     def start_phi_from_obs(self, Y_t):
         N = Y_t.shape[0]
@@ -1489,11 +1550,25 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
             dist_par_un_unc_mean_0 = dist_par_un_T.mean(dim=1) 
             self.set_unc_mean(dist_par_un_unc_mean_0, self.sd_stat_par_un_dist_par_un)
         
-        self.roll_sd_filt()
+        self.roll_sd_filt_train()
 
     # in case I want to have a different starting point for the optim
     # def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_A=None):
     #     super().init_all_stat_par(A0_un=0.0000001)
+
+  
+    def out_of_sample_eval(self):
+ 
+        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=True)
+
+        eval_dict = { "mse":mean_squared_error(Y_vec_all, F_Y_vec_all),
+            "mse_log":mean_squared_log_error(Y_vec_all, F_Y_vec_all),
+            "mae":mean_absolute_error(Y_vec_all, F_Y_vec_all),
+            "mae_pct":mean_absolute_percentage_error(Y_vec_all, F_Y_vec_all),
+            "r2_score":r2_score(Y_vec_all, F_Y_vec_all)}
+        
+        return eval_dict
+        
 
 # Binary Graphs
 
@@ -1537,6 +1612,9 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
         invPiMat_= self.invPiMat(phi, beta=beta, X_t=X_t)
         out = invPiMat_/(1 + invPiMat_)
         return out
+
+    def exp_Y(self, phi, beta, X_t):
+        return self.exp_A(phi, beta=beta, X_t=X_t)
 
     def zero_deg_par_fun(self, Y_t, phi, method, degIO=None):
         """
@@ -1674,6 +1752,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
     def eval_prediction(self, Y_tp1, phi, beta, X_tp1):
         pass
 
+   
 
 class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
@@ -1742,5 +1821,11 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
             phi_unc_mean_0 = phi_T.mean(dim=1) 
             self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
 
+    def out_of_sample_eval(self, exclude_never_obs_train=True):
+        inds_keep_subset = self.get_train_Y_T().sum(dim=(2)) > 0
 
+        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(inds_keep_subset=inds_keep_subset)
 
+        return roc_auc_score(Y_vec_all, F_Y_vec_all)
+        
+        
