@@ -23,7 +23,7 @@ from matplotlib import pyplot as plt
 from .utils.tensortools import splitVec, tens, putZeroDiag, putZeroDiag_T, soft_lu_bound, strIO_from_mat, strIO_from_tens_T
 from .utils.opt import optim_torch
 import itertools
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_error, mean_absolute_percentage_error, mean_squared_log_error, r2_score
 
 from pathlib import Path
 from torch.autograd import grad
@@ -1558,7 +1558,16 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
   
     def out_of_sample_eval(self):
-        pass
+ 
+        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=True)
+
+        eval_dict = { "mse":mean_squared_error(Y_vec_all, F_Y_vec_all),
+            "mse_log":mean_squared_log_error(Y_vec_all, F_Y_vec_all),
+            "mae":mean_absolute_error(Y_vec_all, F_Y_vec_all),
+            "mae_pct":mean_absolute_percentage_error(Y_vec_all, F_Y_vec_all),
+            "r2_score":r2_score(Y_vec_all, F_Y_vec_all)}
+        
+        return eval_dict
         
 
 # Binary Graphs
