@@ -708,7 +708,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def plot_phi_T(self, x=None, i=None, fig_ax=None):
         if x is None:
-            x = np.array(range(self.T_train))
+            x = np.array(range(self.T_all))
         phi_T, _, _ = self.get_seq_latent_par()
         if phi_T.shape[1] ==1:
             phi_T = phi_T.repeat_interleave(x.shape[0], dim=1)
@@ -725,6 +725,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             fig, ax = fig_ax
         ax[0].plot(x, phi_i_T.T)
         ax[1].plot(x, phi_o_T.T)
+        for a in ax:
+            a.vlines(self.T_train, a.get_ylim()[0], a.get_ylim()[1], colors = "r", linestyles="dashed")
         return fig, ax
     
     def plot_beta_T(self, x=None, fig_ax = None):
