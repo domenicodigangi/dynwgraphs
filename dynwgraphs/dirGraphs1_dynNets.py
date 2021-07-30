@@ -125,6 +125,9 @@ class dirGraphs_funs(nn.Module):
             return torch.exp(log_Econd_mat_restr)  
             #  putZeroDiag(torch.exp(log_Econd_mat))
 
+    def exp_Y(self, phi, beta, X_t):
+        pass
+
     def identify_io_par_to_be_sum(self, phi, id_type):
         """ enforce an identification condition on input and output parameters parameters for a single snapshot
         """
@@ -1269,6 +1272,48 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         super().load_par(load_path)
         self.roll_sd_filt_train()
 
+    def get_forecast(self, t):
+        if t<= self.T_train:
+            logger.error(f"Should forecast time steps not in the train set T_train {self.T_train}, required {t}")
+            raise
+     
+        # Score driven parameters at time t are actually forecasts, since they are computed using obs up to t-1
+        phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
+        X_t = self.get_X_t(t)
+        
+        F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
+        return F_A_t
+
+    def get_out_of_sample_obs_and_pred(self, inds_keep_subset = None, only_present=False):
+
+        if inds_keep_subset is None:
+            inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
+        else:
+            if only_present:
+                raise
+
+        self.roll_sd_filt(self.T_all)
+
+        F_Y_vec_all = np.zeros(0)
+        Y_vec_all = np.zeros(0)
+
+        for t in range(self.T_test, self.T_all): 
+            
+            Y_t = self.get_Y_t(t)
+            Y_vec_t = Y_t.detach().numpy()
+            F_Y_vec_t = self.get_forecast(t).detach().numpy()
+
+            if only_present:
+                inds_keep_subset = Y_t>0            
+            Y_vec_all = np.append(Y_vec_all, Y_vec_t[inds_keep_subset])
+            F_Y_vec_all = np.append(F_Y_vec_all, F_Y_vec_t[inds_keep_subset])
+            
+        return Y_vec_all, F_Y_vec_all
+
+    def out_of_sample_eval(self):
+        pass
+
+
 
 # Weighted Graphs
 
@@ -1280,6 +1325,9 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
         self.model_class = "dirSpW1"
         self.bin_mod = dirBin1_sequence_ss(torch.zeros(10, 10, 20))
+
+    def exp_Y(self, phi, beta, X_t):
+        return self.cond_exp_Y(phi, beta=beta, X_t=X_t)
 
     def start_phi_from_obs(self, Y_t):
         N = Y_t.shape[0]
@@ -1508,6 +1556,11 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
     # def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_A=None):
     #     super().init_all_stat_par(A0_un=0.0000001)
 
+  
+    def out_of_sample_eval(self):
+        pass
+        
+
 # Binary Graphs
 
 class dirBin1_sequence_ss(dirGraphs_sequence_ss):
@@ -1550,6 +1603,9 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
         invPiMat_= self.invPiMat(phi, beta=beta, X_t=X_t)
         out = invPiMat_/(1 + invPiMat_)
         return out
+
+    def exp_Y(self, phi, beta, X_t):
+        return self.exp_A(phi, beta=beta, X_t=X_t)
 
     def zero_deg_par_fun(self, Y_t, phi, method, degIO=None):
         """
@@ -1756,46 +1812,11 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
             phi_unc_mean_0 = phi_T.mean(dim=1) 
             self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
 
+    def out_of_sample_eval(self, exclude_never_obs_train=True):
+        inds_keep_subset = self.get_train_Y_T().sum(dim=(2)) > 0
 
-    def get_forecast(self, t):
-        if t<= self.T_train:
-            logger.error(f"Should forecast time steps not in the train set T_train {self.T_train}, required {t}")
-            raise
+        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(inds_keep_subset=inds_keep_subset)
 
-        
-        # Score driven parameters at time t are actually forecasts, since they are computed using obs up to t-1
-        phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
-
-        X_t = self.get_X_t(t)
-
-        F_A_t = self.exp_A(phi_t, beta=beta_t, X_t=X_t)
-
-        return F_A_t
-
-
-    def get_out_of_sample_auc(self, exclude_never_obs_train = True):
-
-        if exclude_never_obs_train:
-            inds_keep_subset = self.get_train_Y_T().sum(dim=(2)) > 0
-        else:
-            inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
-
-        self.roll_sd_filt(self.T_all)
-
-        F_Y_vec_all = np.zeros(0)
-        Y_vec_all = np.zeros(0)
-
-        for t in range(self.T_test, self.T_all): 
-            
-            Y_t = self.get_Y_t(t)
-            Y_vec_t = Y_t.detach().numpy()
-            F_Y_vec_t = self.get_forecast(t).detach().numpy()
-
-            
-            Y_vec_all = np.append(Y_vec_all, Y_vec_t[inds_keep_subset])
-            F_Y_vec_all = np.append(F_Y_vec_all, F_Y_vec_t[inds_keep_subset])
-            
-            
         return roc_auc_score(Y_vec_all, F_Y_vec_all)
-
-
+        
+        
