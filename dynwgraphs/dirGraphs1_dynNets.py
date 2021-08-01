@@ -217,7 +217,7 @@ class dirGraphs_funs(nn.Module):
         return ''.join([f'{key}={value}_' for key, value in dict.items()])
 
     def file_names(self, save_path):
-        pre_name =  save_path / f"{self.info_str_long()}"
+        pre_name =  Path(save_path) / f"{self.info_str_long()}"
         names = {}
         names["model"] = f"{pre_name}model.pkl"
         names["parameters"] = f"{pre_name}par.pkl"
@@ -733,9 +733,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         return fig, ax
     
     def plot_beta_T(self, x=None, fig_ax = None):
-        if x is None:
-            x = np.array(range(self.T_train))
         _, _, beta_T = self.get_seq_latent_par()
+        if x is None:
+            x = np.array(range(self.T_all))
         n_beta = beta_T.shape[2]
         if fig_ax is None:
             fig, ax = plt.subplots(n_beta,1)
@@ -815,6 +815,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         return model_info_dict
 
     def load_par(self,  load_path):
+        logger.info("Loading par")
         par_dic = pickle.load(open(self.file_names(load_path)["parameters"], "rb"))
 
         self.set_par_val_from_dict(par_dic)
@@ -856,7 +857,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.par_dict_to_save = dict
         self.start_opt_from_current_par = True
 
-
+    def out_of_sample_eval(self):
+        logger.warn(f"Out of sample eval for ss sequences not ready. returning ")
+        return 0
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
         Version With Score Driven parameters.
@@ -1170,8 +1173,12 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         self.dist_par_un_T = copy.deepcopy(mod_no_beta.dist_par_un_T)
         self.start_opt_from_current_par = True
         self.roll_sd_filt_train()
-        assert mod_no_beta.loglike_seq_T() == self.loglike_seq_T()
-
+        try:
+            assert torch.isclose(mod_no_beta.loglike_seq_T(), self.loglike_seq_T())
+        except:
+            logger.error(f"logl mod no beta = {mod_no_beta.loglike_seq_T()}, log l mod beta = {self.loglike_seq_T()}")
+            # raise
+    
     def init_par_from_model_with_const_par(self, lower_model):
         if lower_model.phi_tv:
             if self.phi_tv:
@@ -1223,12 +1230,25 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         lower_model.roll_sd_filt_train()
         logger.info(f"lower model likelihood {lower_model.loglike_seq_T()}, model with sd par loglike {self.loglike_seq_T()}")
 
-    def init_par_from_model_const_beta(self, mod_no_beta):
-        self.sd_stat_par_un_phi = copy.deepcopy(mod_no_beta.sd_stat_par_un_phi)
-        self.dist_par_un_T = copy.deepcopy(mod_no_beta.dist_par_un_T)
+    def init_par_from_model_const_beta(self, mod_const_beta):
+        self.sd_stat_par_un_phi = copy.deepcopy(mod_const_beta.sd_stat_par_un_phi)
+        self.dist_par_un_T = copy.deepcopy(mod_const_beta.dist_par_un_T)
         self.start_opt_from_current_par = True
         self.roll_sd_filt_train()
-        assert mod_no_beta.loglike_seq_T() == self.loglike_seq_T()
+        try:
+            assert torch.isclose(mod_const_beta.loglike_seq_T(), self.loglike_seq_T())
+        except:
+            logger.error(f"logl mod const beta = {mod_const_beta.loglike_seq_T()}, log l mod beta tv = {self.loglike_seq_T()}")
+
+    def init_par_from_prev_model(self, prev_mod):
+        if self.X_T is None:
+            raise
+        if prev_mod.X_T is None:
+            self.init_par_from_model_without_beta(prev_mod)
+        elif self.any_beta_tv():
+            self.init_par_from_model_const_beta(prev_mod)
+        else:
+            raise
 
     def get_n_par(self):
         n_par = 0
@@ -1825,6 +1845,7 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         inds_keep_subset = self.get_train_Y_T().sum(dim=(2)) > 0
 
         Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(inds_keep_subset=inds_keep_subset)
+        logger.info(f"out of sample eval on {Y_vec_all.size} observations")
 
         return roc_auc_score(Y_vec_all, F_Y_vec_all)
         
