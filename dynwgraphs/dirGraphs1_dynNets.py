@@ -341,7 +341,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     # set default init kwargs to be shared between binary and weighted models
     def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
-            opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None):
+            opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None, opt_n=None):
 
         super().__init__(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr,  size_dist_par_un_t=size_dist_par_un_t, size_beta_t=size_beta_t, phi_id_type=phi_id_type, like_type=like_type)
         
@@ -386,9 +386,11 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         
         self.opt_options_ss_t = opt_options_ss_t
         self.opt_options_ss_seq = opt_options_ss_seq
-        self.opt_options = self.opt_options_ss_seq
         if max_opt_iter is not None:
-            self.opt_options["max_opt_iter"] = max_opt_iter
+            self.opt_options_ss_seq["max_opt_iter"] = max_opt_iter
+        if opt_n is not None:
+            self.opt_options_ss_seq["opt_n"] = opt_n
+        self.opt_options = self.opt_options_ss_seq
         
         self.data_name = data_name
         
@@ -424,6 +426,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 for t, beta_t in enumerate(self.beta_T):
                     self.beta_T[t] = beta_t * self.beta_start_val 
 
+            for b in self.beta_T:
+                b.requires_grad = True
 
         self.start_opt_from_current_par = False
 
@@ -774,6 +778,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         Estimate from sequence of observations a set of parameters that can be time varying or constant. If time varying estimate a different set of parameters for each time step
         """
         
+        logger.info(self.opt_options)
+        
+
         self.run_checks()
 
         if not self.start_opt_from_current_par:
@@ -788,7 +795,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
       
         run_name = f"SSSeq_"
 
-        opt_out = optim_torch(obj_fun, self.par_l_to_opt, max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold)
+        opt_out = optim_torch(obj_fun, self.par_l_to_opt, max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
 
         self.identify_sequence()
 
@@ -842,7 +849,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 else:                    
                     if type(a) in [dict, torch.nn.modules.container.ParameterDict ]:
                         for k1, v1 in a.items():
-                            logger.info(f"setting {k1}")
+                            # logger.info(f"setting {k1}")
                             if not v1.shape == v[k1].shape:
                                 raise Exception(f"attribute {k1} of wrong shape")
                         setattr(self, k, v)
@@ -860,7 +867,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def out_of_sample_eval(self):
         logger.warn(f"Out of sample eval for ss sequences not ready. returning ")
-        return 0
+        return {"auc_score":0}
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
         Version With Score Driven parameters.
@@ -878,11 +885,15 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     def __init__(self, *args, init_sd_type = "unc_mean", rescale_SD = True, opt_options_sd = __opt_options_sd_def, **kwargs ):
 
-        self.opt_options_sd = opt_options_sd
-        self.opt_options = self.opt_options_sd
+        
         super().__init__(*args, **kwargs)
-        
-        
+        self.opt_options_sd = opt_options_sd
+        if "max_opt_iter" in kwargs.keys():
+            self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
+        if "opt_n" in kwargs.keys():
+            self.opt_options_sd["opt_n"] = kwargs["opt_n"]
+        self.opt_options = self.opt_options_sd
+
         self.rescale_SD = rescale_SD
         self.init_sd_type = init_sd_type
 
@@ -1115,7 +1126,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.par_dict_to_save["beta_T"] = self.beta_T[0]
 
     def estimate_sd(self, tb_log_flag=True, tb_save_fold="tb_logs"):
-
+        logger.info(self.opt_options)
         self.run_checks()
 
         if not self.start_opt_from_current_par:
@@ -1143,7 +1154,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         run_name = self.info_filter()
         
-        return optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), folder_name=tb_save_fold, log_interval=100)
+        return optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
         
     def estimate(self, **kwargs):
         try:
@@ -1853,7 +1864,7 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
         Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(inds_keep_subset=inds_keep_subset)
         logger.info(f"out of sample eval on {Y_vec_all.size} observations")
-
-        return roc_auc_score(Y_vec_all, F_Y_vec_all)
+        auc_score = roc_auc_score(Y_vec_all, F_Y_vec_all)
+        return {"auc_score":auc_score}
         
         
