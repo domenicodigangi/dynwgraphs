@@ -341,8 +341,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     # set default init kwargs to be shared between binary and weighted models
     def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
-            opt_options_ss_t = _opt_options_ss_t_def, 
-            opt_options_ss_seq = _opt_options_ss_seq_def):
+            opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None):
 
         super().__init__(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr,  size_dist_par_un_t=size_dist_par_un_t, size_beta_t=size_beta_t, phi_id_type=phi_id_type, like_type=like_type)
         
@@ -388,6 +387,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.opt_options_ss_t = opt_options_ss_t
         self.opt_options_ss_seq = opt_options_ss_seq
         self.opt_options = self.opt_options_ss_seq
+        if max_opt_iter is not None:
+            self.opt_options["max_opt_iter"] = max_opt_iter
         
         self.data_name = data_name
         
@@ -420,8 +421,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 self.beta_T = [torch.ones(self.size_beta_t, self.n_reg, requires_grad=True)]
 
             with torch.no_grad():
-                for beta_t in self.beta_T:
-                    beta_t = beta_t * self.beta_start_val 
+                for t, beta_t in enumerate(self.beta_T):
+                    self.beta_T[t] = beta_t * self.beta_start_val 
 
 
         self.start_opt_from_current_par = False
@@ -768,7 +769,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         for l in self.par_dict_to_save.values():
             self.par_l_to_opt.extend(l)
 
-    def estimate_ss_seq_joint(self, tb_log_flag=True, tb_save_fold="runs"):
+    def estimate_ss_seq_joint(self, tb_log_flag=True, tb_save_fold="tb_logs"):
         """
         Estimate from sequence of observations a set of parameters that can be time varying or constant. If time varying estimate a different set of parameters for each time step
         """
@@ -872,14 +873,15 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     __max_value_A = 20
     __B0 = torch.ones(1) * 0.98
     __A0 = torch.ones(1) * 0.0001
+    __A0_beta = torch.ones(1) * 1e-12
 
 
     def __init__(self, *args, init_sd_type = "unc_mean", rescale_SD = True, opt_options_sd = __opt_options_sd_def, **kwargs ):
 
-        super().__init__(*args, **kwargs)
-        
         self.opt_options_sd = opt_options_sd
         self.opt_options = self.opt_options_sd
+        super().__init__(*args, **kwargs)
+        
         
         self.rescale_SD = rescale_SD
         self.init_sd_type = init_sd_type
@@ -900,18 +902,20 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.B0_un = self.re2un_B_par( torch.ones(1) * B0_un)
         if A0_un is None:
             self.A0_un = self.re2un_A_par( torch.ones(1) * self.__A0)
+            self.A0_beta_un = self.re2un_A_par( torch.ones(1) * self.__A0_beta)
         else:
             self.A0_un = self.re2un_A_par( torch.ones(1) * A0_un)
+            self.A0_beta_un = self.re2un_A_par( torch.ones(1) * A0_un)
 
         if self.phi_tv:
-            self.sd_stat_par_un_phi = self.define_stat_un_sd_par_dict(self.phi_T[0].shape)    
+            self.sd_stat_par_un_phi = self.define_stat_un_sd_par_dict(self.phi_T[0].shape, self.B0_un, self.A0_un)    
 
         if self.dist_par_tv:
-            self.sd_stat_par_un_dist_par_un = self.define_stat_un_sd_par_dict(self.dist_par_un_T[0].shape)    
+            self.sd_stat_par_un_dist_par_un = self.define_stat_un_sd_par_dict(self.dist_par_un_T[0].shap, self.B0_un, self.A0_une)    
            
         if self.beta_T is not None:    
             if self.any_beta_tv():
-                self.sd_stat_par_un_beta = self.define_stat_un_sd_par_dict(self.beta_T[0].shape)    
+                self.sd_stat_par_un_beta = self.define_stat_un_sd_par_dict(self.beta_T[0].shape, self.B0_un, self.A0_beta_un)    
         
         self.start_opt_from_current_par = False
             
@@ -926,9 +930,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
                 
         self.identification_type = "phi_t"#
         
-    def define_stat_un_sd_par_dict(self, n_sd_par):
+    def define_stat_un_sd_par_dict(self, n_sd_par, B0_un, A0_un):
 
-        sd_stat_par_dict = {"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*self.B0_un),"A" :nn.Parameter(torch.ones(n_sd_par)*self.A0_un)}
+        sd_stat_par_dict = {"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*B0_un),"A" :nn.Parameter(torch.ones(n_sd_par)*A0_un)}
 
         if self.init_sd_type != "unc_mean":
             sd_stat_par_dict["init_val"] = nn.Parameter(torch.zeros(n_sd_par))
@@ -1110,7 +1114,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.par_l_to_opt.append(self.beta_T[0])
             self.par_dict_to_save["beta_T"] = self.beta_T[0]
 
-    def estimate_sd(self, tb_log_flag=True, tb_save_fold="runs"):
+    def estimate_sd(self, tb_log_flag=True, tb_save_fold="tb_logs"):
 
         self.run_checks()
 
@@ -1159,7 +1163,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
  
             return self.estimate_sd(**kwargs)
 
-    def run(self, est_flag, l_s_path  ):
+    def load_or_est(self, est_flag, l_s_path  ):
         if est_flag:
             logger.info("Estimating")
             self.estimate_sd()
@@ -1173,6 +1177,8 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         self.dist_par_un_T = copy.deepcopy(mod_no_beta.dist_par_un_T)
         self.start_opt_from_current_par = True
         self.roll_sd_filt_train()
+        mod_no_beta.roll_sd_filt_train()
+
         try:
             assert torch.isclose(mod_no_beta.loglike_seq_T(), self.loglike_seq_T())
         except:
@@ -1235,6 +1241,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         self.dist_par_un_T = copy.deepcopy(mod_const_beta.dist_par_un_T)
         self.start_opt_from_current_par = True
         self.roll_sd_filt_train()
+        mod_const_beta.roll_sd_filt_train()
         try:
             assert torch.isclose(mod_const_beta.loglike_seq_T(), self.loglike_seq_T())
         except:
