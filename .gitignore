@@ -116,3 +116,5 @@ mlruns/
 tb_logs/
 
 runs/
+
+data_dynwgraphs_model/
