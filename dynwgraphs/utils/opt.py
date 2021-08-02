@@ -53,7 +53,7 @@ def grad_norm_from_list(par_list):
         total_norm = torch.norm(torch.stack([torch.linalg.norm(p.grad.detach()).to(device) for p in parameters]), 2.0).item()
     return total_norm
 
-def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, folder_name="runs_tb", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=100, disable_logging=False):
+def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, tb_folder="tb_logs", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=200, disable_logging=False):
     """given a function and a starting vector, run one of different pox optimizations"""
     if disable_logging:
         logger.disabled = True
@@ -64,7 +64,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     if max_opt_iter <=5:
         tb_log_flag = False
 
-    logger.info(f"saving to {folder_name}")
+    logger.info(f"saving to {tb_folder}")
   
     if isinstance(unParIn, list):
         unPar = unParIn # [par for par in unParIn if par is not None]
@@ -95,7 +95,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
 
     if tb_log_flag:
 
-        full_name = Path(folder_name) / opt_info_str
+        full_name = Path(tb_folder) / opt_info_str
 
         writer = SummaryWriter(str(full_name))
 
