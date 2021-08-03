@@ -824,7 +824,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def load_par(self,  load_path):
         logger.info("Loading par")
-        par_dic = pickle.load(open(self.file_names(load_path)["parameters"], "rb"))
+        if load_path[-4:] == ".pkl":
+            file_name = load_path 
+        else:
+            file_name = self.file_names(load_path)["parameters"]
+        
+        par_dic = pickle.load(open(file_name, "rb"))
 
         self.set_par_val_from_dict(par_dic)
 
