@@ -6,7 +6,7 @@ Created on Tue Aug 13 17:56:03 2019
 @author: domenico
 """
 
-#%% import packages
+# %% import packages
 import sys
 sys.path.append("./src/")
 from utils import splitVec, tens, putZeroDiag, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
@@ -18,7 +18,7 @@ from utils import tens, strIO_from_mat
 from dirBin1_dynNets import  dirBin1_staNet, dirBin1_dynNet_SD
 
 
-#%% Load WTN Data
+# %% Load WTN Data
 #load yearly world Trade networks
 ld_data = np.load("./data/world_trade_network/world_trade_net_T.npz",
                   allow_pickle=True)
@@ -39,7 +39,7 @@ A_t = Y_t>0
 Y_tp1 = Y_T[:, :, t+1]
 X_T_multi = X_T.repeat_interleave(2, dim=2)
 X_T_multi[:, :, 1, :] += 50
-#%% Test single snapshot estimates of  phi
+# %% Test single snapshot estimates of  phi
 model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=False)
 model.distr = 'bernoulli'
 beta_t = torch.zeros(N)
@@ -67,7 +67,7 @@ phi_ss_t, diag_iter =  model.estimate_ss_t(Y_t, phi_0=phi_0, plot_flag=False, pr
 diag.append(diag_iter)
 print(model.check_tot_exp(Y_t, phi_ss_t) )
 
-#%% test quick ss estimate
+# %% test quick ss estimate
 model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=False, rescale_SD = False )
 degIO = strIO_from_mat(Y_t)
 
@@ -79,13 +79,13 @@ Y_t.sum()
 model.exp_A(phi_t).sum()
 print(model.check_tot_exp(Y_t, phi_t))
 
-#%% Test joint ss estimates of phi and beta
+# %% Test joint ss estimates of phi and beta
 model = dirBin1_dynNet_SD()
 par_ss_t, diag = model.estimate_ss_t( Y_t, X_t=X_t, beta_t=None, phi_0=None, dist_par_un_t=None, like_type=2,
                                      est_beta=True, dim_beta=1,
                                         max_opt_iter=50, print_flag=True)
 
-#%% test estimate of sequence of phi given static beta
+# %% test estimate of sequence of phi given static beta
 model = dirBin1_staNet(avoid_ovflw_fun_flag=True)
 dim_beta = N
 n_reg = X_T.shape[2]
@@ -96,7 +96,7 @@ all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=X_T_multi, beta=beta, phi_T_0=Non
                                         print_flag=True, plot_flag=False, print_every=10)
 
 plt.plot(diag_T)
-#%% test estimate of beta constant given phi_T
+# %% test estimate of beta constant given phi_T
 model = dirBin1_staNet(avoid_ovflw_fun_flag=True)
 all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=None, beta=None, phi_T_0=None,
                                          est_beta=False,
@@ -110,7 +110,7 @@ beta_t_est, diag_beta_t = model.estimate_beta_const_given_phi_T(Y_T, X_T_multi, 
                                                                   dim_beta=dim_beta, dist_par_un=0,
                                                                   max_opt_iter=10, print_flag=True, plot_flag=True)
 
-#%% test estimate of beta and phi_T
+# %% test estimate of beta and phi_T
 model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True  )
 phi_T, dist_par_un, beta, diag = \
 model.ss_filt_est_beta_const(Y_T, X_T=X_T_multi, beta=None, phi_T=None,
@@ -126,7 +126,7 @@ plt.close("all")
 plt.plot(-np.array(diag))
 
 
-#%% Define Parameters for Score Driven Dynamics
+# %% Define Parameters for Score Driven Dynamics
 N_max_opt_iter_max = 10000
 N_max_opt_iter_each_iter = 200
 N_iter = N_max_opt_iter_max//N_max_opt_iter_each_iter
@@ -137,7 +137,7 @@ A = torch.cat([torch.ones(N_BA) * 0.1, torch.ones(N_BA) * 0.1])
 wI, wO = 1 + torch.randn(N), torch.randn(N)
 W = torch.cat((torch.ones(N) * wI, torch.ones(N) * wO)) * 0.001
 
-#%% Test score
+# %% Test score
 model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD=True)
 s_1 = model.score_t(Y_t, W, backprop_score=True, like_type=2)
 s_2 = model.score_t(Y_t, W, backprop_score=False, like_type=2)
@@ -145,18 +145,18 @@ s_2 = model.score_t(Y_t, W, backprop_score=False, like_type=2)
 print((s_1[0] - s_2[0]).abs().sum())
 print((s_1[1] - s_2[1]).abs().sum())
 
-#%% test starting values
+# %% test starting values
 strIO_from_mat(model.exp_A(model.start_phi_form_obs(Y_t))) - strIO_from_mat(Y_t)
 model.check_tot_exp(Y_t, model.start_phi_form_obs(Y_t), one_dim_out=False)
 
 
-#%% Tet score driven estimates
+# %% Tet score driven estimates
 model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD=False)
 W_est, B_est, A_est, diag = model.estimate_SD(Y_T, B0=B, A0=A, W0=W, max_opt_iter=20, lr=0.01,
                                                 dim_dist_par_un=1, print_flag=True, plot_flag=False,
                                                                  est_dis_par_un=False)
 
-#%% Test Score Driven Estimates with static regressors
+# %% Test Score Driven Estimates with static regressors
 dim_beta=N
 n_reg=X_T_multi.shape[2]
 n_beta_tv = 0
@@ -176,7 +176,7 @@ W_est, B_est, A_est, dist_par_un_est, beta_const_est,  diag = model.estimate_SD_
 
 
 
-#%% Test sd dgp with time varying regressors
+# %% Test sd dgp with time varying regressors
 model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD=False)
 N = 30
 T = 100
@@ -220,7 +220,7 @@ W_est, B_est, A_est, dist_par_un_est, beta_const_est,  diag = model.estimate_SD_
                                                         lr=0.01,
                                                         print_flag=True, plot_flag=False)
 
-#%% Test missp dgps
+# %% Test missp dgps
 N = 50
 T = 100
 N_sample = 10
@@ -241,7 +241,7 @@ plt.close()
 plt.plot(Y_T_S_dgp[:, :, :, 0].sum(dim=0).transpose(0, 1)[:, 4])
 Y_T_S_dgp[:, :, :, 0].sum(dim=0)
 
-#%%
+# %%
 
 
 
@@ -253,7 +253,7 @@ Y_T_S_dgp[:, :, :, 0].sum(dim=0)
 
 
 
-#%%
+# %%
 
 
 

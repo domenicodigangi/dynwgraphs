@@ -1167,9 +1167,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         except:
             original_opt_n = self.opt_options_sd["opt_n"]
             original_max_opt_iter = self.opt_options_sd["max_opt_iter"]
-            secont_opt_n = "ADAMHD"
-            second_n_iter = 5000
-            second_lr = 0.0001
+            secont_opt_n = "ADAM"
+            second_n_iter = original_max_opt_iter
+            second_lr = self.opt_options_sd["lr"]
             logger.warning(f"An error occurred in opt using {self.opt_options_sd['opt_n']}. Trying with  {secont_opt_n} for {second_n_iter} opt steps and lr = {second_lr}")
             # if error, reset parameters and change opt algo
             self.init_all_stat_par()

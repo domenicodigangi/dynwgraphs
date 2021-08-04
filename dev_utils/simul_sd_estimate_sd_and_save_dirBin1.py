@@ -28,7 +28,7 @@ distribution = 'bernoulli'
 
 torch.manual_seed(2)
 model = dirBin1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD=False)
-#%%
+# %%
 N = 35
 T = 100
 N_sample = 2

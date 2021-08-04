@@ -9,7 +9,7 @@ Created on Saturday June 26th 2021
 
 
 
-#%% import packages
+# %% import packages
 from typing import NamedTuple
 
 import numpy as np
@@ -23,7 +23,7 @@ import importlib
 from torch.functional import split
 importlib.reload(dynwgraphs)
 
-#%%
+# %%
 
 from dynwgraphs.utils.dgps import get_test_w_seq
 
@@ -31,7 +31,7 @@ Y_T, X_T_scalar, X_T_matrix =  get_test_w_seq(avg_weight=1e3)
 X_T_test = X_T_matrix
 N, _, T = Y_T.shape
 
-#%% Test single snapshot estimates of  phi_t
+# %% Test single snapshot estimates of  phi_t
 model = dirSpW1_sequence_ss(Y_T, X_T=X_T_test, size_beta_t=1, avoid_ovflw_fun_flag=True, distr = 'gamma') # 'lognormal')
 model.opt_options_ss_t["max_opt_iter"] = 100
 
@@ -40,7 +40,7 @@ model.estimate_ss_t(1, est_phi=True, est_beta = True, est_dist_par=False)
 model.get_seq_latent_par()
 
 
-#%% Test sequence of single snapshot estimates of  phi_T
+# %% Test sequence of single snapshot estimates of  phi_T
 model = dirSpW1_sequence_ss(Y_T, X_T=X_T_test, avoid_ovflw_fun_flag=True, distr = 'gamma', size_beta_t=1, beta_tv=[True, True]) # 'lognormal')
 model.opt_options_ss_seq["max_opt_iter"] = 10
 model.opt_options_ss_seq["opt_n"] = "ADAM"
@@ -62,7 +62,7 @@ phi_t_identified, beta_id = model.identify_phi_io_beta(phi_t_identified, beta_t,
 
 
 
-#%% Test Score driven estimates of  phi_T
+# %% Test Score driven estimates of  phi_T
 model = dirSpW1_SD(Y_T, avoid_ovflw_fun_flag=True, distr = 'gamma', rescale_SD=True) # 'lognormal')
 
 model = dirSpW1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], avoid_ovflw_fun_flag=True, distr = 'gamma', rescale_SD=False) # 'lognormal')

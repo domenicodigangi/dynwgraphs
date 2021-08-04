@@ -8,12 +8,12 @@ Created on Friday June 11th 2021
 """
 
 
-#%% import packages
+# %% import packages
 import numpy as np
 import matplotlib.pyplot as plt
 import mlflow
 
-#%%
+# %%
 experiment_name = "static directed weighted estimates"
 experiment = mlflow.get_experiment_by_name(experiment_name)
 mlflow.set_experiment(experiment_name)
@@ -25,7 +25,7 @@ print("Tags: {}".format(experiment.tags))
 print("Lifecycle_stage: {}".format(experiment.lifecycle_stage))
 
 
-#%% 
+# %% 
 test_data = np.load("../tests/test_data/dir_w_test_data.npz")
 # define input data for tests 
 unit_measure = 1e5
@@ -44,7 +44,7 @@ Y_tp1 = Y_T[:, :, t+1]
 X_T_multi = X_matrix_T.repeat_interleave(2, dim=2)
 X_T_multi[:, :, 1, :] += 1
 
-#%%
+# %%
 import click
 
 @click.command()

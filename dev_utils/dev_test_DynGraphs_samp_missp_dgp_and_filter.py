@@ -9,7 +9,7 @@ Created on Saturday July 10th 2021
 
 """
 
-#%% import packages
+# %% import packages
 
 import torch
 import matplotlib.pyplot as plt
@@ -23,7 +23,7 @@ import importlib
 importlib.reload(dynwgraphs)
 from dynwgraphs.utils.dgps import get_test_w_seq, get_dgp_model, dgpAR
 
-#%%
+# %%
 
 dgp_bin_set = {"N" : 50, \
         "T" : 100, \
@@ -41,7 +41,7 @@ mod_dgp_bin.sample_Y_T().mean()
 
 mod_dgp_bin.beta_T
 
-#%%
+# %%
 dgp_w_set = copy.deepcopy(dgp_bin_set) 
 dgp_w_set["model"] = "dirSpW1"
 dgp_w_set["type_dgp_phi"] = "AR"
@@ -65,7 +65,7 @@ mod_dgp_bin.Y_T = mod_dgp_bin.sample_Y_T()
 mod_dgp_w.Y_T = mod_dgp_w.sample_Y_T(mod_dgp_w.bin_mod.Y_T>0)
 
 
-#%% Test bin estimates 
+# %% Test bin estimates 
 filt_kwargs = {"size_beta_t":mod_dgp_bin.size_beta_t, "X_T" : mod_dgp_bin.X_T, "beta_tv":mod_dgp_bin.beta_tv}
 
 
@@ -85,7 +85,7 @@ mod_sd_bin.opt_options_sd["max_opt_iter"] = sim_args["max_opt_iter"]
 _, h_par_opt = mod_sd_bin.estimate_sd(tb_save_fold=sim_args["tb_fold"])
 
 
-#%% Test ss w estimates
+# %% Test ss w estimates
 filt_kwargs = {"size_beta_t":mod_dgp_w.size_beta_t, "X_T" : mod_dgp_w.X_T, "beta_tv":mod_dgp_w.beta_tv}
 
 sim_args  = {"max_opt_iter": 5000, "tb_fold": "./tb_logs"}
@@ -94,7 +94,7 @@ mod_ss_w = dirSpW1_sequence_ss(mod_dgp_w.Y_T, **filt_kwargs, beta_start_val = 1)
 mod_ss_w.opt_options_ss_seq["max_opt_iter"] = sim_args["max_opt_iter"]
 # _, h_par_opt = mod_ss_w.estimate_ss_seq_joint(tb_save_fold=sim_args["tb_fold"])
 
-#%% Test sd w estimates
+# %% Test sd w estimates
 
 
 mod_sd_w = dirSpW1_SD(mod_dgp_w.Y_T, **filt_kwargs)
@@ -122,7 +122,7 @@ start_unc_mean = mean_mat_mod.phi_T[0]
 mod_sd_w.set_unc_mean(start_unc_mean, mod_sd_w.sd_stat_par_un_phi)
 
 
-#%%
+# %%
 mod_ss_w.dist_par_un_T
 mod_sd_w.dist_par_un_T
 
@@ -143,7 +143,7 @@ mod_sd_w.estimate_ss_t(1, True, True, False)
 mod_sd_w.phi_T[1]
 mod_sd_w.dist_par_un_T
 
-#%%
+# %%
 
 plt.scatter(mod_dgp_bin.beta_T[0].detach(), mod_ss_bin.beta_T[0].detach())
 plt.scatter(mod_dgp_bin.beta_T[0].detach(), mod_sd_bin.beta_T[0].detach())

@@ -11,7 +11,7 @@ Created on Saturday July 10th 2021
 
 
 
-#%% import packages
+# %% import packages
 from typing import NamedTuple
 
 import numpy as np
@@ -25,7 +25,7 @@ import importlib
 from torch.functional import split
 importlib.reload(dynwgraphs)
 
-#%%
+# %%
 
 from dynwgraphs.utils.dgps import get_test_w_seq
 
@@ -33,7 +33,7 @@ Y_T, X_T_scalar, X_T_matrix =  get_test_w_seq(avg_weight=1e3)
 X_T_test = X_T_matrix
 N, _, T = Y_T.shape
 
-#%% Test single snapshot estimates of  phi_t
+# %% Test single snapshot estimates of  phi_t
 model = dirBin1_sequence_ss(Y_T, X_T=X_T_test, size_beta_t=1, avoid_ovflw_fun_flag=True) # 'lognormal')
 model.opt_options_ss_t["max_opt_iter"] = 50
 
@@ -45,7 +45,7 @@ model.check_exp_vals(t)
 model.get_seq_latent_par()
 
 
-#%% Test sequence of single snapshot estimates of  phi_T
+# %% Test sequence of single snapshot estimates of  phi_T
 model = dirBin1_sequence_ss(Y_T, X_T=X_T_test, avoid_ovflw_fun_flag=True, size_beta_t=1, beta_tv=[True, True]) # 'lognormal')
 model.opt_options_ss_seq["max_opt_iter"] = 20
 model.opt_options_ss_seq["opt_n"] = "LBFGS"
@@ -66,7 +66,7 @@ phi_t_identified, beta_id = model.identify_phi_io_beta(phi_t_identified, beta_t,
 
 
 
-#%% Test Score driven estimates of  phi_T
+# %% Test Score driven estimates of  phi_T
 model = dirBin1_SD(Y_T, avoid_ovflw_fun_flag=True, rescale_SD=True) # 'lognormal')
 
 model = dirBin1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], avoid_ovflw_fun_flag=True, rescale_SD=False) # 'lognormal')

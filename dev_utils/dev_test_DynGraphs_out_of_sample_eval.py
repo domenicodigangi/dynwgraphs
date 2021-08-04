@@ -7,7 +7,7 @@ Created on Wednesday July 28th 2021
 
 """
 
-#%% import packages
+# %% import packages
 
 import torch
 import matplotlib.pyplot as plt
@@ -21,7 +21,7 @@ import importlib
 importlib.reload(dynwgraphs)
 from dynwgraphs.utils.dgps import get_test_w_seq, get_dgp_model, dgpAR
 
-#%%
+# %%
 
 dgp_bin_set = {"N" : 50, \
         "T" : 100, \
@@ -62,7 +62,7 @@ mod_dgp_bin.Y_T = mod_dgp_bin.sample_Y_T()
 mod_dgp_w.Y_T = mod_dgp_w.sample_Y_T(mod_dgp_w.bin_mod.Y_T>0)
 
 
-#%% define filters 
+# %% define filters 
 filt_kwargs = {"size_beta_t":mod_dgp_bin.size_beta_t, "X_T" : mod_dgp_bin.X_T, "beta_tv":mod_dgp_bin.beta_tv, "T_train":95}
 sim_args  = {"max_opt_iter": 150, "tb_fold": "./tb_logs"}
 
@@ -79,7 +79,7 @@ mod_sd_w = dirSpW1_SD(mod_dgp_w.Y_T, **filt_kwargs)
 mod_sd_w.opt_options_sd["max_opt_iter"] = sim_args["max_opt_iter"]
 # mod_sd_w.estimate()
 
-#%%
+# %%
 # mod_sd_bin.estimate()
 
 mod_sd_bin.out_of_sample_eval()

@@ -10,7 +10,7 @@ Last Modified: Thursday June 10th 2021 12:01:25 pm, by Domenico Di Gangi
 
 
 
-#%% import packages
+# %% import packages
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -18,7 +18,7 @@ from dynwgraphs import dirSpW1_dynNet_SD
 from dynwgraphs.utils import splitVec, tens, putZeroDiag, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound, degIO_from_mat, strIO_from_mat, tic, toc, rand_steps, dgpAR, putZeroDiag_T, tens, strIO_from_mat
 
 
-#%% 
+# %% 
 test_data = np.load("../tests/test_data/dir_w_test_data.npz")
 
 # define input data for tests 
@@ -40,7 +40,7 @@ X_T_multi = X_matrix_T.repeat_interleave(2, dim=2)
 X_T_multi[:, :, 1, :] += 1
 
 
-#%% Test starting points for phi
+# %% Test starting points for phi
 model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True)
 model.distr = 'gamma'
 phi_0 = model.start_phi_from_obs(Y_t)
@@ -48,7 +48,7 @@ phi_0 = model.start_phi_from_obs(Y_t)
 print((model.cond_exp_Y(phi_0)[Y_t > 0].sum() - Y_t.sum())/Y_t.sum())
 print((model.cond_exp_Y(phi_0).sum() - Y_t.sum())/Y_t.sum())
 
-#%% Test single snapshot estimates of  phi
+# %% Test single snapshot estimates of  phi
 model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True)
 model.distr = 'gamma'  # 'lognormal'
 beta_t = torch.zeros(N)
@@ -67,7 +67,7 @@ tmp = Y_t[A_t] / EYcond_mat[A_t]
 torch.mean(torch.tensor(tmp<1, dtype=torch.float32))
 plt.hist(tmp.detach(), 30, [0,2])
 
-#%% Test joint ss estimates of phi and dist_par
+# %% Test joint ss estimates of phi and dist_par
 model = dirSpW1_dynNet_SD()
 dim_dist_par_un = N
 dim_beta = N
@@ -81,14 +81,14 @@ par_ss_t, diag = model.estimate_ss_t( Y_t, X_t=X_T_multi[:, :, :, t], beta_t=bet
 
 model.loglike_t(Y_t, phi_t_0, X_t=X_t, beta=beta)
 
-#%% Test joint ss estimates of phi and dist_par and beta
+# %% Test joint ss estimates of phi and dist_par and beta
 model = dirSpW1_dynNet_SD()
 
 par_ss_t, diag = model.estimate_ss_t( Y_t, X_t=X_t, beta_t=None, phi_0=None, dist_par_un_t=None, like_type=2,
                             est_dist_par=True, dim_dist_par_un=N, est_beta=True, dim_beta=1,
                                         max_opt_iter=50, print_flag=True)
 
-#%% test estimate of sequence of phi given static diss par
+# %% test estimate of sequence of phi given static diss par
 model = dirSpW1_staNet(avoid_ovflw_fun_flag=True  )
 dim_dist_par_un = N
 phi_T_0 = model.start_phi_from_obs_T(Y_T)
@@ -97,7 +97,7 @@ all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=None, beta=None, phi_T_0=phi_T_0,
                                         est_dist_par=False, est_beta=False,
                                         max_opt_iter=4, opt_n=1, lr=0.01,
                                         print_flag=True, plot_flag=False, print_every=1)
-#%% test estimate of sequence of phi given static diss par and static beta
+# %% test estimate of sequence of phi given static diss par and static beta
 model = dirSpW1_staNet(avoid_ovflw_fun_flag=True  )
 dim_dist_par_un = N
 dist_par_un = model.dist_par_un_start_val(dim_dist_par_un)
@@ -113,7 +113,7 @@ all_par_est_T, diag_T = model.ss_filt(Y_T, X_T=X_T_multi, beta=beta, phi_T_0=phi
                                         print_flag=True, plot_flag=False, print_every=1)
 
 
-#%% Tests joint estimate of const betas
+# %% Tests joint estimate of const betas
 model = dirSpW1_staNet(avoid_ovflw_fun_flag=True  )
 dim_dist_par_un = N
 dist_par_un = model.dist_par_un_start_val(dim_dist_par_un)
@@ -130,7 +130,7 @@ beta_t_est, diag_beta_t = model.estimate_beta_const_given_phi_T(Y_T, X_T_multi, 
                                                                   dim_beta=dim_beta, dist_par_un=dist_par_un,
                                                                   max_opt_iter=10, print_flag=True, plot_flag=True)
 
-#%% test estimate of  phi_T and constant beta and distr_par
+# %% test estimate of  phi_T and constant beta and distr_par
 model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True  )
 phi_T, dist_par_un, beta, diag = \
 model.ss_filt_est_beta_dist_par_const(Y_T, X_T=X_T_multi, beta=None, phi_T=None, dist_par_un=None, like_type=2,
@@ -143,7 +143,7 @@ model.ss_filt_est_beta_dist_par_const(Y_T, X_T=X_T_multi, beta=None, phi_T=None,
                                       print_every=1)
 
 
-#%%%
+# %%%
 plt.close("all")
 plt.plot(-np.array(diag))
 
@@ -169,7 +169,7 @@ log_probs = dist.log_prob(Y_t[A_t])
 torch.sum(log_probs)
 log_probs.sum()
 
-#%% Define Parameters for Score Driven Dynamics
+# %% Define Parameters for Score Driven Dynamics
 N_max_opt_iter_max = 10000
 N_max_opt_iter_each_iter = 200
 N_iter = N_max_opt_iter_max//N_max_opt_iter_each_iter
@@ -179,7 +179,7 @@ B = torch.cat([torch.ones(N_BA) * 0.95, torch.ones(N_BA) * 0.95])
 A = torch.cat([torch.ones(N_BA) * 0.01, torch.ones(N_BA) * 0.01])
 wI, wO = 1 + torch.randn(N), torch.randn(N)
 W = torch.cat((torch.ones(N) * wI, torch.ones(N) * wO)) * 0.001
-#%% test score
+# %% test score
 model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD = False)
 model.distr = 'gamma'
 
@@ -197,7 +197,7 @@ plt.hist((s_t-s_t_ad).detach())
 print((s_t-s_t_ad).abs().mean().item())#, ((s_t-s_t_ad)/s_t_ad)[s_t_ad>0].abs().max().item())
 (s_t-s_t_ad).abs()
 
-#%%  Test overflow limitations
+# %%  Test overflow limitations
 model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True  )
 model.loglike_sd_filt(W, B, A, Y_T, beta_const=None, X_T = None, dist_par_un=torch.ones(1))
 model.loglike_sd_filt(W, B, A, Y_T, beta_const=None, X_T = None, dist_par_un=torch.ones(1))
@@ -213,7 +213,7 @@ for t in range(T):
     logl_T = logl_T + logl_t
 
 
-#%% test likelihood for numerical errors
+# %% test likelihood for numerical errors
 phi=phi_t
 Y_mat = Y_t
 dist_par_un = torch.ones(1)
@@ -236,7 +236,7 @@ out = tmp + tmp1 + tmp2 + tmp3
 
 
 
-#%% Tet score driven estimates
+# %% Tet score driven estimates
 import utils
 model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD = False )
 model.backprop_sd = False
@@ -249,7 +249,7 @@ W_est, B_est, A_est, dist_par_un_est, sd_par_0, diag = model.estimate_SD(Y_T, B0
                                                                  est_dis_par_un=False)
 utils.toc()
 
-#%% Test SD loglike speed
+# %% Test SD loglike speed
 import time
 model = dirSpW1_dynNet_SD(avoid_ovflw_fun_flag=True, rescale_SD = False )
 model.distr = 'gamma'
@@ -257,7 +257,7 @@ model.backprop_sd = True
 %timeit model.sd_filt(W, B, A, Y_T)
 
 
-#%% Test Score Driven Estimates with static regressors
+# %% Test Score Driven Estimates with static regressors
 dim_beta=1
 n_reg=X_T_multi.shape[2]
 n_beta_tv = 0
@@ -278,7 +278,7 @@ W_est, B_est, A_est, dist_par_un_est, beta_const_est, sd_par_0,  diag = model.es
                                                                 lr=0.01,
                                                                 print_flag=True, plot_flag=False, print_every=1)
 
-#%% Test Score Driven Estimates with time varying regressors
+# %% Test Score Driven Estimates with time varying regressors
 dim_beta=1
 n_reg=X_T_multi.shape[2]
 n_beta_tv = 1
@@ -301,7 +301,7 @@ W_est, B_est, A_est, dist_par_un_est, beta_const_est, sd_par_0,  diag = model.es
 
 
 
-#%% Test log Normal version
+# %% Test log Normal version
 
 
-#%% Test different score scalings
+# %% Test different score scalings
