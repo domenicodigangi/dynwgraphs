@@ -83,7 +83,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
                   "LBFGS" : torch.optim.LBFGS(unPar, lr=lr),
                   "ADAHESSIAN" : Adahessian(unPar, lr=lr,  betas= (0.9, 0.999), weight_decay=0)}
 
-    hparams_dict = {"optimizer" :opt_n,  "lr" :lr, "n_par" :sum((p.numel() for p in unPar))}
+    hparams_dict = {"optimizer": opt_n,  "lr": lr, "n_par": sum((p.numel() for p in unPar))}
 
     opt_info_str = run_name + ''.join([f'{key}_{value}_' for key, value in hparams_dict.items()])
 
@@ -162,7 +162,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
             logger.info(f" iter {n_iter}, g_norm {'{:.3e}'.format(grad_norm)}, roll rel impr { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
 
 
-    hparams_dict["actual_n_opt_iter"]= n_iter
+    opt_metrics = {"actual_n_opt_iter": n_iter, "final_grad_norm": grad_norm, "final_roll_improv": roll_rel_im, "final_loss": loss.item()}
     hparams_dict["max_opt_iter"]= max_opt_iter
 
     logger.info(f"opt parameters : {hparams_dict}")
@@ -179,7 +179,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     # add prefix to dict keys
     hparams_dict = {f"{key}": val for key, val in hparams_dict.items()}
 
-    return optimizer, hparams_dict
+    return optimizer, hparams_dict, opt_metrics
 
 
 
