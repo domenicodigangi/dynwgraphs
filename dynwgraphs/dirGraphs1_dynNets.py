@@ -934,18 +934,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
                 self.sd_stat_par_un_beta = self.define_stat_un_sd_par_dict(self.beta_T[0].shape, self.B0_un, self.A0_beta_un)    
         
         self.start_opt_from_current_par = False
-            
-    def check_id_required(self):
-
-        if any(self.reg_cross_unique):
-            if sum(self.reg_cross_unique) >1 :
-                raise
-            if self.any_beta_tv():
-                if sum(self.beta_tv) >1 :
-                    raise
                 
-        self.identification_type = "phi_t"#
-        
     def define_stat_un_sd_par_dict(self, n_sd_par, B0_un, A0_un):
 
         sd_stat_par_dict = {"w" :nn.Parameter(torch.zeros(n_sd_par)),"B" :nn.Parameter(torch.ones(n_sd_par)*B0_un),"A" :nn.Parameter(torch.ones(n_sd_par)*A0_un)}
