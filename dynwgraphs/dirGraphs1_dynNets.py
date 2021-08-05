@@ -1176,91 +1176,73 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         else:
             logger.info("Loading")
             self.load_par(l_s_path)
-
-    def init_par_from_model_without_beta(self, mod_no_beta):
-        self.sd_stat_par_un_phi = copy.deepcopy(mod_no_beta.sd_stat_par_un_phi)
-        self.dist_par_un_T = copy.deepcopy(mod_no_beta.dist_par_un_T)
-        self.start_opt_from_current_par = True
-        self.roll_sd_filt_train()
-        mod_no_beta.roll_sd_filt_train()
-
-        try:
-            assert torch.isclose(mod_no_beta.loglike_seq_T(), self.loglike_seq_T())
-        except:
-            logger.error(f"logl mod no beta = {mod_no_beta.loglike_seq_T()}, log l mod beta = {self.loglike_seq_T()}")
-            # raise
+ 
+   
     
-    def init_par_from_model_with_const_par(self, lower_model):
-        if lower_model.phi_tv:
-            if self.phi_tv:
-                if self.sd_stat_par_un_phi["w"].shape != lower_model.sd_stat_par_un_phi["w"].shape:
-                    raise Exception("wrong shapes")
+    def init_par_from_lower_model(self, lower_model):
+        """
+        For each set of par (phi, dist_par_un, beta), check if present in lower. if so use it to set corresponding self par
+        """
 
-                self.sd_stat_par_un_phi = copy.deepcopy(lower_model.sd_stat_par_un_phi)
+        logger.info("init par from lower model")
+ 
+        if lower_model.phi_T is not None:
+            if lower_model.phi_tv:
+                if self.phi_tv:
+                    if self.sd_stat_par_un_phi["w"].shape != lower_model.sd_stat_par_un_phi["w"].shape:
+                        raise Exception("wrong shapes")
+
+                    self.sd_stat_par_un_phi = copy.deepcopy(lower_model.sd_stat_par_un_phi)
+                else:
+                    raise Exception("lower model should have less dynamical parameters")
             else:
-                raise Exception("lower model should have less dynamical parameters")
-        else:
-            if self.phi_tv:
-                self.set_unc_mean(self.sd_stat_par_un_phi, lower_model.phi_T[0])
+                if self.phi_tv:
+                    self.set_unc_mean(lower_model.phi_T[0], self.sd_stat_par_un_phi)
+                else:
+                    self.phi_T = copy.deepcopy(lower_model.phi_T)
+
+        if lower_model.dist_par_un_T is not None:
+            if lower_model.dist_par_tv:
+                if self.dist_par_tv:
+                    if self.sd_stat_par_un_dist_par_un["w"].shape != lower_model.sd_stat_par_un_dist_par_un["w"].shape:
+                        raise Exception("wrong shapes")
+
+                    self.sd_stat_par_un_dist_par_un = copy.deepcopy(lower_model.sd_stat_par_un_dist_par_un)
+                else:
+                    raise Exception("lower model should have less dynamical parameters")
             else:
-                self.phi_T = copy.deepcopy(lower_model.phi_T)
+                if self.dist_par_tv:
+                    self.set_unc_mean(lower_model.dist_par_un_T[0], self.sd_stat_par_un_dist_par_un)
+                else:
+                    self.dist_par_un_T = copy.deepcopy(lower_model.dist_par_un_T)
 
 
-        if lower_model.dist_par_tv:
-            if self.dist_par_tv:
-                if self.sd_stat_par_un_dist_par_un["w"].shape != lower_model.sd_stat_par_un_dist_par_un["w"].shape:
-                    raise Exception("wrong shapes")
+        if lower_model.beta_T is not None:
+            if lower_model.any_beta_tv():
+                if self.any_beta_tv():
+                    if self.sd_stat_par_un_beta["w"].shape != lower_model.sd_stat_par_un_beta["w"].shape:
+                        raise Exception("wrong shapes")
 
-                self.sd_stat_par_un_dist_par_un = copy.deepcopy(lower_model.sd_stat_par_un_dist_par_un)
+                    self.sd_stat_par_un_beta = copy.deepcopy(lower_model.sd_stat_par_un_beta)
+                else:
+                    raise Exception("lower model should have less dynamical parameters")
             else:
-                raise Exception("lower model should have less dynamical parameters")
-        else:
-            if self.dist_par_tv:
-                self.set_unc_mean(self.sd_stat_par_un_dist_par_un, lower_model.dist_par_un_T[0])
-            else:
-                self.dist_par_un_T = copy.deepcopy(lower_model.dist_par_un_T)
-
-        if any(lower_model.beta_tv):
-            if self.any_beta_tv():
-                if self.sd_stat_par_un_beta["w"].shape != lower_model.sd_stat_par_un_beta["w"].shape:
-                    raise Exception("wrong shapes")
-
-                self.sd_stat_par_un_beta = copy.deepcopy(lower_model.sd_stat_par_un_beta)
-            else:
-                raise Exception("lower model should have less dynamical parameters")
-        else:
-            if self.any_beta_tv():
-                self.set_unc_mean(lower_model.beta_T[0], self.sd_stat_par_un_beta)
-            else:
-                self.beta_T = copy.deepcopy(lower_model.beta_T)
-                            
+                if self.any_beta_tv():
+                    self.set_unc_mean(lower_model.beta_T[0], self.sd_stat_par_un_beta)
+                else:
+                    self.beta_T = copy.deepcopy(lower_model.beta_T)
 
         self.start_opt_from_current_par = True
         
         self.roll_sd_filt_train()
         lower_model.roll_sd_filt_train()
-        logger.info(f"lower model likelihood {lower_model.loglike_seq_T()}, model with sd par loglike {self.loglike_seq_T()}")
-
-    def init_par_from_model_const_beta(self, mod_const_beta):
-        self.sd_stat_par_un_phi = copy.deepcopy(mod_const_beta.sd_stat_par_un_phi)
-        self.dist_par_un_T = copy.deepcopy(mod_const_beta.dist_par_un_T)
-        self.start_opt_from_current_par = True
-        self.roll_sd_filt_train()
-        mod_const_beta.roll_sd_filt_train()
         try:
-            assert torch.isclose(mod_const_beta.loglike_seq_T(), self.loglike_seq_T())
+            assert torch.isclose(lower_model.loglike_seq_T(), self.loglike_seq_T())
+            logger.info(f"lower model likelihood {lower_model.loglike_seq_T()}, upper model likelihood {self.loglike_seq_T()}")
         except:
-            logger.error(f"logl mod const beta = {mod_const_beta.loglike_seq_T()}, log l mod beta tv = {self.loglike_seq_T()}")
+            logger.error(f"lower model likelihood {lower_model.loglike_seq_T()}, upper model likelihood {self.loglike_seq_T()}")
 
-    def init_par_from_prev_model(self, prev_mod):
-        if self.X_T is None:
-            raise
-        if prev_mod.X_T is None:
-            self.init_par_from_model_without_beta(prev_mod)
-        elif self.any_beta_tv():
-            self.init_par_from_model_const_beta(prev_mod)
-        else:
-            raise
+
 
     def get_n_par(self):
         n_par = 0
