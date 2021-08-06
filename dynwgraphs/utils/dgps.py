@@ -129,51 +129,63 @@ def sample_par_vec_dgp_ar(model, unc_mean, B, sigma, T, identify=True):
         return par_T_sample_list
 
 
-def get_dgp_model(N, T, model,  n_ext_reg, size_beta_t, type_dgp_phi, type_dgp_beta, all_beta_tv,  Y_reference=None):
+def cli_reg_set_to_num_mod_par(N: int, reg_set_dict, max_opt_iter=None, ):
+    """
+    convert the regressors settings from the command line to a format that can be given as a model input
+    """
 
-    dgp_par = {"N": N, "T": T}
+    out_dict = {}
+    out_dict["n_ext_reg"] = reg_set_dict["n_ext_reg"]
+    if reg_set_dict["n_ext_reg"] == 0:
+        out_dict["size_beta_t"] = None
+        out_dict["beta_tv"] = None
+    else:
+        if reg_set_dict["size_beta_t"] == "one":
+            out_dict["size_beta_t"] = 1
+        elif reg_set_dict["size_beta_t"] == "N":
+            out_dict["size_beta_t"] = N
+        elif reg_set_dict["size_beta_t"] == "2N":
+            out_dict["size_beta_t"] = 2*N
+        else:
+            raise
+        out_dict["beta_tv"] = [reg_set_dict["all_beta_tv"] for p in range(out_dict["n_ext_reg"])]
 
+        if max_opt_iter is not None:
+            out_dict["max_opt_iter"] = max_opt_iter
+
+    return out_dict
+
+
+def get_mod_and_par(N, T, model, reg_set, type_dgp_phi, type_dgp_beta,  Y_reference=None):
+
+    dgp_par = {}
     dgp_phi = get_default_tv_dgp_par(type_dgp_phi)
-    
- 
-    dgp_par["phi"] = dgp_phi
-    if n_ext_reg == 0:
+    beta_dict = cli_reg_set_to_num_mod_par(N, reg_set)
+
+    if beta_dict["n_ext_reg"] == 0:
         dgp_beta = None
-    elif n_ext_reg == 1:
+    elif beta_dict["n_ext_reg"] == 1:
         # combinations of tv and static regression coefficients are not yet allowed
         dgp_beta = get_default_tv_dgp_par(type_dgp_beta)
         
-        dgp_beta["is_tv"] = [all_beta_tv for p in range(n_ext_reg)]
-        dgp_beta["X_type"] = "uniform"
-        if size_beta_t=="one":
-            dgp_beta["size_beta_t"] = 1
-        elif size_beta_t=="N":
-            dgp_beta["size_beta_t"] = N
-        elif size_beta_t=="2N":
-            dgp_beta["size_beta_t"] = 2*N
-        else:
-            raise
-        beta_0 = 1 + torch.randn(dgp_beta["size_beta_t"], n_ext_reg)
-   
-     
+        dgp_beta.update(beta_dict)
+
+        beta_0 = 1 + torch.randn(dgp_beta["size_beta_t"], beta_dict["n_ext_reg"])     
     else:
         raise
- 
-    dgp_par["beta"] = dgp_beta
-
 
     if Y_reference is None:
         Y_T_test, _, _ =  get_test_w_seq(avg_weight=1e3)
-        Y_reference = (Y_T_test[:N,:N,0]>0).float()
+        Y_reference = (Y_T_test[:N, :N, 0]>0).float()
 
     else:
         assert N == Y_reference.shape[0]  
 
-    if model =="dirBin1":     
+    if model == "dirBin1":  
         mod_tmp = dirBin1_sequence_ss(torch.zeros(N,N,T)) 
         dist_par_un_T_dgp = None
 
-    elif model =="dirSpW1":    
+    elif model == "dirSpW1":
         mod_tmp = dirSpW1_sequence_ss(torch.zeros(N,N,T))
         dist_par_un_T_dgp = [torch.ones(1)]    
 
@@ -181,7 +193,7 @@ def get_dgp_model(N, T, model,  n_ext_reg, size_beta_t, type_dgp_phi, type_dgp_b
     if "phi_0" in dgp_phi:
         phi_0 = dgp_phi["phi_0"]
     elif dgp_phi["type"] == "const_unif":
-        if n_ext_reg>0:
+        if beta_dict["n_ext_reg"] > 0:
             raise
         if model =="dirBin1":     
             exp_a = dgp_phi["exp_val"]
@@ -203,8 +215,8 @@ def get_dgp_model(N, T, model,  n_ext_reg, size_beta_t, type_dgp_phi, type_dgp_b
         phi_T_dgp = [phi_0]
     
     # dgp for beta
-    if n_ext_reg >0:
-        if n_ext_reg >1:
+    if beta_dict["n_ext_reg"] > 0:
+        if beta_dict["n_ext_reg"] > 1:
             raise
 
         beta_tv = dgp_beta["is_tv"]
@@ -248,11 +260,11 @@ def get_dgp_model(N, T, model,  n_ext_reg, size_beta_t, type_dgp_phi, type_dgp_b
 
 
     if model =="dirBin1":    
-        mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, phi_tv=dgp_phi["is_tv"], beta_tv = beta_tv, size_beta_t = size_beta_t) 
+        mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, phi_tv=dgp_phi["is_tv"], beta_tv=beta_tv, size_beta_t=size_beta_t) 
     
     elif model =="dirSpW1":    
 
-        mod_dgp = dirSpW1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, phi_tv=dgp_phi["is_tv"], beta_tv = beta_tv, size_beta_t = size_beta_t) 
+        mod_dgp = dirSpW1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, phi_tv=dgp_phi["is_tv"], beta_tv=beta_tv, size_beta_t=size_beta_t) 
 
     mod_dgp.phi_T = phi_T_dgp
     mod_dgp.beta_T = beta_T_dgp

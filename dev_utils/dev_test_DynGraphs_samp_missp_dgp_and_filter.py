@@ -21,7 +21,7 @@ from dynwgraphs.dirGraphs1_dynNets import  dirBin1_sequence_ss, dirBin1_SD, dirS
 import importlib
 
 importlib.reload(dynwgraphs)
-from dynwgraphs.utils.dgps import get_test_w_seq, get_dgp_model, dgpAR
+from dynwgraphs.utils.dgps import get_test_w_seq, get_mod_and_par, dgpAR
 
 # %%
 
@@ -34,7 +34,7 @@ dgp_bin_set = {"N" : 50, \
         "type_dgp_beta": "AR", \
         "all_beta_tv": False}
 
-mod_dgp_bin, dgp_par_bin, Y_reference_bin = get_dgp_model(**dgp_bin_set)
+mod_dgp_bin, dgp_par_bin, Y_reference_bin = get_mod_and_par(**dgp_bin_set)
 
 mod_dgp_bin.phi_tv
 mod_dgp_bin.sample_Y_T().mean()
@@ -50,7 +50,7 @@ dgp_w_set["size_beta_t"] = "2N"
 dgp_w_set["all_beta_tv"] = False
 dgp_w_set["type_dgp_beta"] = "AR"
 
-mod_dgp_w, dgp_par_w, Y_reference_w = get_dgp_model(**dgp_w_set)
+mod_dgp_w, dgp_par_w, Y_reference_w = get_mod_and_par(**dgp_w_set)
 mod_dgp_w.bin_mod = mod_dgp_bin
 
 
