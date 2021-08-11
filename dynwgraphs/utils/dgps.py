@@ -29,10 +29,13 @@ logger = logging.getLogger(__name__)
 def get_default_tv_dgp_par(dgp_type):
     if dgp_type== "AR":
         dgp_par = {"type":"AR", "B":0.98, "sigma":0.1, "is_tv":True}
-
-    elif dgp_type[:11] == "const_unif_":
+    
+    elif len(dgp_type) >= 9:
+        if dgp_type[:9]== "AR_sigma_":
+            dgp_par = {"type":"AR", "B":0.98, "sigma":float(dgp_type[9:]), "is_tv":True}
+        elif dgp_type[:11] == "const_unif_":
         
-        dgp_par = {"type" : "const_unif", "exp_val": float(dgp_type[11:]), "is_tv":False}
+            dgp_par = {"type" : "const_unif", "exp_val": float(dgp_type[11:]), "is_tv":False}
     
     else:
         raise
@@ -129,48 +132,24 @@ def sample_par_vec_dgp_ar(model, unc_mean, B, sigma, T, identify=True):
         return par_T_sample_list
 
 
-def cli_reg_set_to_num_mod_par(N: int, reg_set_dict, max_opt_iter=None, ):
-    """
-    convert the regressors settings from the command line to a format that can be given as a model input
-    """
-
-    out_dict = {}
-    out_dict["n_ext_reg"] = reg_set_dict["n_ext_reg"]
-    if reg_set_dict["n_ext_reg"] == 0:
-        out_dict["size_beta_t"] = None
-        out_dict["beta_tv"] = None
-    else:
-        if reg_set_dict["size_beta_t"] == "one":
-            out_dict["size_beta_t"] = 1
-        elif reg_set_dict["size_beta_t"] == "N":
-            out_dict["size_beta_t"] = N
-        elif reg_set_dict["size_beta_t"] == "2N":
-            out_dict["size_beta_t"] = 2*N
-        else:
-            raise
-        out_dict["beta_tv"] = [reg_set_dict["all_beta_tv"] for p in range(out_dict["n_ext_reg"])]
-
-        if max_opt_iter is not None:
-            out_dict["max_opt_iter"] = max_opt_iter
-
-    return out_dict
 
 
-def get_mod_and_par(N, T, model, reg_set, type_dgp_phi, type_dgp_beta,  Y_reference=None):
+def get_mod_and_par(N, T, model, dgp_set_dict,  Y_reference=None):
 
     dgp_par = {}
-    dgp_phi = get_default_tv_dgp_par(type_dgp_phi)
-    beta_dict = cli_reg_set_to_num_mod_par(N, reg_set)
+    dgp_phi = get_default_tv_dgp_par(dgp_set_dict["type_dgp_phi"])
 
-    if beta_dict["n_ext_reg"] == 0:
+    if dgp_set_dict["n_ext_reg"] == 0:
         dgp_beta = None
-    elif beta_dict["n_ext_reg"] == 1:
+    elif dgp_set_dict["n_ext_reg"] == 1:
         # combinations of tv and static regression coefficients are not yet allowed
-        dgp_beta = get_default_tv_dgp_par(type_dgp_beta)
+        dgp_beta = get_default_tv_dgp_par(dgp_set_dict["type_dgp_beta"])
         
-        dgp_beta.update(beta_dict)
+        dgp_beta.update(dgp_set_dict)
 
-        beta_0 = 1 + torch.randn(dgp_beta["size_beta_t"], beta_dict["n_ext_reg"])     
+        dgp_beta["X_type"] = "uniform"
+
+        beta_0 = 1 + torch.randn(dgp_beta["size_beta_t"], dgp_set_dict["n_ext_reg"])     
     else:
         raise
 
@@ -193,8 +172,6 @@ def get_mod_and_par(N, T, model, reg_set, type_dgp_phi, type_dgp_beta,  Y_refere
     if "phi_0" in dgp_phi:
         phi_0 = dgp_phi["phi_0"]
     elif dgp_phi["type"] == "const_unif":
-        if beta_dict["n_ext_reg"] > 0:
-            raise
         if model =="dirBin1":     
             exp_a = dgp_phi["exp_val"]
             phi_0_i = 0.5*torch.log(tens(exp_a /(1 - exp_a)))
@@ -215,11 +192,11 @@ def get_mod_and_par(N, T, model, reg_set, type_dgp_phi, type_dgp_beta,  Y_refere
         phi_T_dgp = [phi_0]
     
     # dgp for beta
-    if beta_dict["n_ext_reg"] > 0:
-        if beta_dict["n_ext_reg"] > 1:
+    if dgp_set_dict["n_ext_reg"] > 0:
+        if dgp_set_dict["n_ext_reg"] > 1:
             raise
 
-        beta_tv = dgp_beta["is_tv"]
+        beta_tv = dgp_beta["beta_tv"]
         size_beta_t = dgp_beta["size_beta_t"]
 
         #sample regressors
@@ -236,9 +213,9 @@ def get_mod_and_par(N, T, model, reg_set, type_dgp_phi, type_dgp_beta,  Y_refere
         if beta_0.shape[0] != dgp_beta["size_beta_t"]:
             raise 
 
-        if any(dgp_beta["is_tv"]):
-            if not  all(dgp_beta["is_tv"]):
-                raise    
+        if any(beta_tv):
+            if not all(beta_tv):
+                raise
             if dgp_beta["type"] == "AR":
                 B = dgp_beta["B"]
                 sigma = dgp_beta["sigma"]

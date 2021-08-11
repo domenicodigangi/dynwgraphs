@@ -223,10 +223,6 @@ class dirGraphs_funs(nn.Module):
         names["parameters"] = f"{pre_name}par.pkl"
         return names
 
-    def save_model(self, save_path):
-        file_name = self.file_names(save_path)["model"]
-        pickle.dump(self, open(file_name, "wb"))
-
     def get_local_save_path(self):
         
         save_path = Path(f"./data_dynwgraphs_model")
@@ -1582,6 +1578,10 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
             "r2_score":r2_score(Y_vec_all, F_Y_vec_all)}
         
         return eval_dict
+
+    def info_filter(self):
+        return self.model_class + super().info_filter()
+
         
 
 # Binary Graphs
@@ -1842,5 +1842,9 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         logger.info(f"out of sample eval on {Y_vec_all.size} observations")
         auc_score = roc_auc_score(Y_vec_all, F_Y_vec_all)
         return {"auc_score":auc_score}
+
+    def info_filter(self):
+        return self.model_class + super().info_filter()
+
         
         
