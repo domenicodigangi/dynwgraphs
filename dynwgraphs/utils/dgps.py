@@ -26,20 +26,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_default_tv_dgp_par(dgp_type):
-    if dgp_type== "AR":
-        dgp_par = {"type":"AR", "B":0.98, "sigma":0.1, "is_tv":True}
-    
-    elif len(dgp_type) >= 9:
-        if dgp_type[:9]== "AR_sigma_":
-            dgp_par = {"type":"AR", "B":0.98, "sigma":float(dgp_type[9:]), "is_tv":True}
-        elif dgp_type[:11] == "const_unif_":
-        
-            dgp_par = {"type" : "const_unif", "exp_val": float(dgp_type[11:]), "is_tv":False}
-    
-    else:
-        raise
-    return dgp_par
 
 
 def rand_steps(start_val, end_val, Nsteps, T, rand=True):
@@ -104,7 +90,7 @@ def get_test_w_seq(avg_weight = 1e5):
     X_scalar_T = tens(X_T).unsqueeze(1).unsqueeze(1).permute((3,2,1,0))
     X_matrix_T = Y_T[:, :, :-1].log().unsqueeze(2)
     X_matrix_T[~torch.isfinite(X_matrix_T)] = 0
-    Y_T = Y_T[:,:,:-1]
+    Y_T = Y_T[:, :, :-1]
 
     N = Y_T.shape[0]
     T = Y_T.shape[2]
@@ -132,103 +118,95 @@ def sample_par_vec_dgp_ar(model, unc_mean, B, sigma, T, identify=True):
         return par_T_sample_list
 
 
-
-
 def get_mod_and_par(N, T, model, dgp_set_dict,  Y_reference=None):
-
-    dgp_par = {}
-    dgp_phi = get_default_tv_dgp_par(dgp_set_dict["type_dgp_phi"])
-
-    if dgp_set_dict["n_ext_reg"] == 0:
-        dgp_beta = None
-    elif dgp_set_dict["n_ext_reg"] == 1:
-        # combinations of tv and static regression coefficients are not yet allowed
-        dgp_beta = get_default_tv_dgp_par(dgp_set_dict["type_dgp_beta"])
-        
-        dgp_beta.update(dgp_set_dict)
-
-        dgp_beta["X_type"] = "uniform"
-
-        beta_0 = 1 + torch.randn(dgp_beta["size_beta_t"], dgp_set_dict["n_ext_reg"])     
-    else:
-        raise
 
     if Y_reference is None:
         Y_T_test, _, _ =  get_test_w_seq(avg_weight=1e3)
-        Y_reference = (Y_T_test[:N, :N, 0]>0).float()
+        Y_reference = (Y_T_test[:N, :N, 0] > 0).float()
 
     else:
         assert N == Y_reference.shape[0]  
 
-    if model == "dirBin1":  
-        mod_tmp = dirBin1_sequence_ss(torch.zeros(N,N,T)) 
+    if model == "dirBin1":
+        mod_tmp = dirBin1_sequence_ss(torch.zeros(N, N, T)) 
         dist_par_un_T_dgp = None
 
     elif model == "dirSpW1":
-        mod_tmp = dirSpW1_sequence_ss(torch.zeros(N,N,T))
+        mod_tmp = dirSpW1_sequence_ss(torch.zeros(N, N, T))
         dist_par_un_T_dgp = [torch.ones(1)]    
 
-    # set reference values for dgp 
-    if "phi_0" in dgp_phi:
-        phi_0 = dgp_phi["phi_0"]
-    elif dgp_phi["type"] == "const_unif":
-        if model =="dirBin1":     
-            exp_a = dgp_phi["exp_val"]
+    phi_dgp_type, phi_0, B_phi, sigma_phi = dgp_set_dict["type_tv_dgp_phi"]
+
+    # set reference values for dgp
+    if phi_0 == "ref_mat":
+        phi_0 = mod_tmp.start_phi_from_obs(Y_reference)
+    elif phi_dgp_type == "const_unif":
+        phi_0 = float(phi_0)
+    else:
+        raise
+
+    if phi_dgp_type == "const_unif":
+        if model =="dirBin1":
+            exp_a = phi_0
             phi_0_i = 0.5*torch.log(tens(exp_a /(1 - exp_a)))
             phi_0 = torch.ones(2*N)*phi_0_i
+            phi_T_dgp = sample_par_vec_dgp_ar(mod_tmp, phi_0, 0, 0, T)
+            phi_tv =True
         else:
             raise
-    else:
-        phi_0 = mod_tmp.start_phi_from_obs(Y_reference)
 
-    if dgp_phi["is_tv"]:    
-        if dgp_phi["type"] == "AR":
-            B = dgp_phi["B"]
-            sigma = dgp_phi["sigma"]
-            phi_T_dgp = sample_par_vec_dgp_ar(mod_tmp, phi_0, B, sigma, T)
-        else:
-            raise
+    elif phi_dgp_type == "AR":
+        phi_T_dgp = sample_par_vec_dgp_ar(mod_tmp, phi_0, B_phi, sigma_phi, T)
+        phi_tv =True
     else:
-        phi_T_dgp = [phi_0]
-    
-    # dgp for beta
+        raise
+
+
+    # dgp for coefficients of ext reg beta
     if dgp_set_dict["n_ext_reg"] > 0:
         if dgp_set_dict["n_ext_reg"] > 1:
             raise
-
-        beta_tv = dgp_beta["beta_tv"]
-        size_beta_t = dgp_beta["size_beta_t"]
-
         #sample regressors
-        if dgp_beta["X_type"] == "uniform":
+        X_cross_type, X_dgp_type, unc_mean_X, B_X, sigma_X = dgp_set_dict["type_tv_dgp_ext_reg"]
+
+        beta_tv = dgp_set_dict["beta_tv"]
+        size_beta_t = dgp_set_dict["size_beta_t"]
+
+        if X_cross_type == "uniform":
             if len(beta_tv) != 1:
                 raise
-            x_T = np.random.standard_normal(T)
+            
+            if X_dgp_type == "AR":
+                x_T = dgpAR(unc_mean_X, B_X, sigma_X, T).unsqueeze(dim=1)
             X_T = tens(np.tile(x_T, (N, N, 1, 1)))
         else:
             raise
 
         # sample reg coeff
-   
-        if beta_0.shape[0] != dgp_beta["size_beta_t"]:
-            raise 
+        beta_dgp_type, unc_mean_beta, B_beta, sigma_beta = dgp_set_dict["type_tv_dgp_beta"]
+        print(unc_mean_beta)
+        if unc_mean_beta is None:
+            unc_mean_beta = 1 + torch.randn(dgp_set_dict["size_beta_t"], dgp_set_dict["n_ext_reg"])
+            if unc_mean_beta.shape[0] != dgp_set_dict["size_beta_t"]:
+                raise
+        elif type(unc_mean_beta) == float:
+            unc_mean_beta = unc_mean_beta +  torch.randn(dgp_set_dict["size_beta_t"], dgp_set_dict["n_ext_reg"])
+        else:
+            raise
 
         if any(beta_tv):
             if not all(beta_tv):
                 raise
-            if dgp_beta["type"] == "AR":
-                B = dgp_beta["B"]
-                sigma = dgp_beta["sigma"]
-                if dgp_beta["size_beta_t"] == 1:
-                    beta_T_dgp = mod_tmp.par_tens_T_to_list(dgpAR(beta_0, B, sigma, T).unsqueeze(dim=1))
-                elif dgp_beta["size_beta_t"] >= 1:
-                    beta_T_dgp = sample_par_vec_dgp_ar(mod_tmp, beta_0, B, sigma, T)
+            if beta_dgp_type == "AR":
+                if dgp_set_dict["size_beta_t"] == 1:
+                    beta_T_dgp = mod_tmp.par_tens_T_to_list(dgpAR(unc_mean_beta, B_beta, sigma_beta, T).unsqueeze(dim=1))
+                elif dgp_set_dict["size_beta_t"] >= 1:
+                    beta_T_dgp = sample_par_vec_dgp_ar(mod_tmp, unc_mean_beta, B_beta, sigma_beta, T)
                     beta_T_dgp = [b.unsqueeze(1) for b in beta_T_dgp]
-             
             else:
                 raise
         else:
-            beta_T_dgp = [beta_0]
+            beta_T_dgp = [unc_mean_beta]
     else:
         X_T = None
         size_beta_t = 1
@@ -237,11 +215,11 @@ def get_mod_and_par(N, T, model, dgp_set_dict,  Y_reference=None):
 
 
     if model =="dirBin1":    
-        mod_dgp = dirBin1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, phi_tv=dgp_phi["is_tv"], beta_tv=beta_tv, size_beta_t=size_beta_t) 
+        mod_dgp = dirBin1_sequence_ss(torch.zeros(N, N, T), X_T=X_T, phi_tv=phi_tv, beta_tv=beta_tv, size_beta_t=size_beta_t) 
     
     elif model =="dirSpW1":    
 
-        mod_dgp = dirSpW1_sequence_ss(torch.zeros(N,N,T), X_T=X_T, phi_tv=dgp_phi["is_tv"], beta_tv=beta_tv, size_beta_t=size_beta_t) 
+        mod_dgp = dirSpW1_sequence_ss(torch.zeros(N, N, T), X_T=X_T, phi_tv=phi_tv, beta_tv=beta_tv, size_beta_t=size_beta_t) 
 
     mod_dgp.phi_T = phi_T_dgp
     mod_dgp.beta_T = beta_T_dgp
@@ -249,7 +227,7 @@ def get_mod_and_par(N, T, model, dgp_set_dict,  Y_reference=None):
 
     mod_dgp.set_par_dict_to_save()
 
-    return mod_dgp, dgp_par, Y_reference
+    return mod_dgp, Y_reference
 
 
 

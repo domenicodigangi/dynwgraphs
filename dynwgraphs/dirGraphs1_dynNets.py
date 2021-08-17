@@ -22,6 +22,7 @@ import copy
 from matplotlib import pyplot as plt
 from .utils.tensortools import splitVec, tens, putZeroDiag, putZeroDiag_T, soft_lu_bound, strIO_from_mat, strIO_from_tens_T
 from .utils.opt import optim_torch
+from .utils.graph_properties import MatrixSymmetry
 import itertools
 from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_error, mean_absolute_percentage_error, mean_squared_log_error, r2_score
 
@@ -39,17 +40,20 @@ class dirGraphs_funs(nn.Module):
     This class collects core methods used to model one observation of directed weighted sparse static networks, modelled with a zero augmented distribution, one  parameter per each node (hence the 1 in the name)
     """
 
-    def __init__(self, avoid_ovflw_fun_flag=True, distr="",  size_dist_par_un_t=None, size_beta_t=None, like_type=None, phi_id_type=None):
+    #TO DO: move some unused attributes to child class
+    def __init__(self, avoid_ovflw_fun_flag=True, distr="", size_phi_t=None, size_dist_par_un_t=None, size_beta_t=None, like_type=None, phi_id_type=None):
+
         super().__init__()
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
         self.distr = distr
+        self.size_phi_t = size_phi_t
         self.size_dist_par_un_t = size_dist_par_un_t
         self.size_beta_t = size_beta_t
         self.like_type = like_type
         self.ovflw_exp_L_limit = -50
         self.ovflw_exp_U_limit = 40
-        self.phi_id_type=phi_id_type
-        self.beta_id_type=phi_id_type
+        self.phi_id_type = phi_id_type
+        self.beta_id_type = phi_id_type
         self.obs_type = "continuous_positive"
 
 
@@ -98,14 +102,24 @@ class dirGraphs_funs(nn.Module):
 
         return prod.sum(dim=2)
 
-    def cond_exp_Y(self, phi, beta, X_t, ret_log=False, ret_all=False):
+    def get_phi_sum(self, phi):
+        if phi.shape[0] == 2*self.N:
+            phi_i, phi_o = splitVec(phi)
+            return phi_i + phi_o.unsqueeze(1)
+        elif phi.shape[0] == self.N:
+            raise "Not ready"
+            return phi + phi.unsqueeze(1)
+        else:
+            raise
+
+
+    def exp_of_fit_plus_reg(self, phi, beta, X_t, ret_log=False, ret_all=False):
         """
-        given the parameters related with the weights, compute the conditional expectation of matrix Y.
-        the conditioning is on each matrix element being greater than zero
-        can have non zero elements on the diagonal!!
+        given the vector of fitness, the regression coeff and the regressors, compute the exponential of the appropriate fitness and regressors sum
         """
-        phi_i, phi_o = splitVec(phi)
-        log_Econd_mat = phi_i + phi_o.unsqueeze(1)
+
+        log_Econd_mat = self.get_phi_sum(phi)
+
         if self.check_reg_and_coeff_pres(X_t, beta):
             log_Econd_mat = log_Econd_mat + self.regr_product(beta, X_t)
 
@@ -120,16 +134,14 @@ class dirGraphs_funs(nn.Module):
             return log_Econd_mat, log_Econd_mat_restr, torch.exp(log_Econd_mat_restr)
         elif ret_log:
             return log_Econd_mat_restr
-            #  putZeroDiag(log_Econd_mat)
         else:
             return torch.exp(log_Econd_mat_restr)  
-            #  putZeroDiag(torch.exp(log_Econd_mat))
 
     def exp_Y(self, phi, beta, X_t):
         pass
 
     def identify_io_par_to_be_sum(self, phi, id_type):
-        """ enforce an identification condition on input and output parameters parameters for a single snapshot
+        """ enforce an identification condition on input and output parameters that are going to enter the pdf always as par_in_i + par_out_j 
         """
         # set the first in parameter to zero
         phi_i, phi_o = splitVec(phi)
@@ -336,10 +348,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     _opt_options_ss_seq_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
     # set default init kwargs to be shared between binary and weighted models
-    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None,  size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
+    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t=None,   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
             opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None, opt_n=None):
 
-        super().__init__(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr,  size_dist_par_un_t=size_dist_par_un_t, size_beta_t=size_beta_t, phi_id_type=phi_id_type, like_type=like_type)
+        super().__init__(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr, size_phi_t=self.size_from_str(size_phi_t), size_dist_par_un_t=self.size_from_str(size_dist_par_un_t), size_beta_t=self.size_from_str(size_beta_t), phi_id_type=phi_id_type, like_type=like_type)
         
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
         
@@ -390,14 +402,45 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         
         self.data_name = data_name
         
+        self.model_symmetry = self.get_model_symmetry()
         self.init_all_par_sequences()
 
-    def init_all_par_sequences(self):        
-        if not self.phi_tv:
-            self.phi_T = [torch.zeros(self.N*2, requires_grad=True)]
-       
+    def size_from_str(self, pox_str):
+        if type(pox_str) == int:
+            return pox_str
+        elif pox_str == "one":
+            return 1
+        elif pox_str == "N":
+            return self.N
+        elif pox_str == "2N":
+            return self.N * 2
+
+    def get_model_symmetry(self):
+        self.check_size_phi()
+        return MatrixSymmetry.dir
+
+    def check_size_phi(self):
+        if self.size_phi_t is None:
+            raise Exception("Model Without fitnesses not ready")
+        elif self.size_phi_t == 0:
+            raise Exception("Model Without fitnesses not ready")
+        elif self.size_phi_t == self.N:
+            raise Exception("Undirected Model not ready")
+        elif self.size_phi_t == 2*self.N:
+            pass
         else:
-            self.phi_T = [torch.zeros(self.N*2, requires_grad=True) for t in range(self.T_all)]
+            raise Exception(f"{self.size_phi_t} is not a valid choice")
+
+    def init_all_par_sequences(self):   
+        self.check_size_phi()
+
+        if self.size_phi_t in [None, 0]:
+            self.phi_T = None
+        else:
+            if not self.phi_tv:
+                self.phi_T = [torch.zeros(self.size_phi_t, requires_grad=True)]
+            else:
+                self.phi_T = [torch.zeros(self.size_phi_t, requires_grad=True) for t in range(self.T_all)]
 
         if self.size_dist_par_un_t is None:
             self.dist_par_un_T = None
@@ -563,21 +606,29 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         logL = self.loglike_seq_T().detach()
         return  k * np.log(n) - 2 * logL
 
+    def identify_phi(self, phi_t):
+        if self.size_phi_t in [None, 0, self.N]:
+            return phi_t
+        elif self.size_phi_t == 2* self.N:
+            return self.identify_phi_io(phi_t)
+        else:
+            raise
+
     def identify_sequence_phi_T(self):    
         for t in range(self.T_train):
             phi_t = self.phi_T[t][:]
-            phi_t_id_0 = self.identify_phi_io(phi_t)
+            phi_t_id_0 = self.identify_phi(phi_t)
             self.phi_T[t] = phi_t_id_0
                         
     def identify_sequence_phi_T_beta_T(self):    
         for t in range(self.T_train):
             #as first step, identify phi_io
             phi_t = self.phi_T[t][:]
-            phi_t_id_0 = self.identify_phi_io(phi_t)
+            phi_t_id_0 = self.identify_phi(phi_t)
                         
             beta_t = self.beta_T[t][:, self.reg_cross_unique]
             x_t = self.get_X_t(t)[0, 0, self.reg_cross_unique]
-            self.phi_T[t][:], self.beta_T[t][:, self.reg_cross_unique] = self.identify_phi_io_beta(phi_t_id_0, beta_t, x_t )    
+            self.phi_T[t][:], self.beta_T[t][:, self.reg_cross_unique] = self.identify_phi_beta(phi_t_id_0, beta_t, x_t )    
 
             self.phi_T[t] = phi_t_id_0
 
@@ -588,7 +639,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         for t in range(self.T_train):
             #as first step, identify phi_io
             phi_t = self.phi_T[t][:]
-            phi_t_id_0 = self.identify_phi_io(phi_t)
+            phi_t_id_0 = self.identify_phi(phi_t)
                         
             self.phi_T[t] = phi_t_id_0
     
@@ -869,6 +920,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def out_of_sample_eval(self):
         logger.warn(f"Out of sample eval for ss sequences not ready. returning ")
         return {"auc_score":0}
+
+
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
         Version With Score Driven parameters.
@@ -972,16 +1025,14 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         if self.phi_tv:
 
-            # phi_t = self.identify_phi_io(phi_t)
-
+           
             s = score_dict["phi"]
             w = self.sd_stat_par_un_phi["w"]
             B = self.un2re_B_par(self.sd_stat_par_un_phi["B"])  
             A = self.un2re_A_par(self.sd_stat_par_un_phi["A"])  
             phi_tp1 = w + torch.mul(B, phi_t) + torch.mul(A, s)
 
-            # phi_tp1 = self.identify_phi_io(phi_tp1)
-
+           
             self.phi_T[t+1] = phi_tp1
 
         if self.dist_par_tv:            
@@ -1004,7 +1055,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             
             beta_tp1 = w + torch.mul(B, beta_t) + torch.mul(A, s)
 
-            # self.identify_phi_io_beta....
             self.beta_T[t+1] = beta_tp1
 
     def plot_sd_par(self):
@@ -1323,8 +1373,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def out_of_sample_eval(self):
         pass
 
-
-
 # Weighted Graphs
 
 class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
@@ -1337,7 +1385,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         self.bin_mod = dirBin1_sequence_ss(torch.zeros(10, 10, 20))
 
     def exp_Y(self, phi, beta, X_t):
-        return self.cond_exp_Y(phi, beta=beta, X_t=X_t)
+        return self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
 
     def start_phi_from_obs(self, Y_t):
         N = Y_t.shape[0]
@@ -1358,7 +1406,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         phi_t_0_i[K_i == 0] = - max_val
         phi_t_0_o[K_o == 0] = - max_val
 
-        return self.identify_phi_io(phi_t_0)
+        return self.identify_phi(phi_t_0)
 
     def dist_from_pars(self, phi, beta, X_t, dist_par_un, A_t=None):
         """
@@ -1368,13 +1416,13 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         # Restrict the distribution parameters.
         dist_par_re = self.link_dist_par(dist_par_un, N, A_t=A_t)
         if self.distr == 'gamma':
-            EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t)
+            EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
            #we already took into account the dimension of dist_par above when restricting it
             rate = torch.div(dist_par_re, EYcond_mat[A_t])
             distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
 
         elif self.distr == 'lognormal':
-            log_EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t, ret_log=True)
+            log_EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t, ret_log=True)
             if A_t is None:
                 sigma = dist_par_re
                 mu = log_EYcond_mat - (sigma ** 2) / 2
@@ -1398,7 +1446,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
             dist_par_re = self.link_dist_par(dist_par_un, N, A_t)
             if self.like_type==0:
                 """ numerically stable version """
-                log_EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t, ret_log=True)
+                log_EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t, ret_log=True)
                 # divide the computation of the loglikelihood in 4 pieces
                 tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
                 tmp1 = - torch.sum(A_t) * torch.lgamma(dist_par_re)
@@ -1407,7 +1455,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
                 tmp3 = - torch.sum(torch.exp(torch.log(Y_t[A_t])-log_EYcond_mat[A_t] + dist_par_re.log() ))
                 out = tmp + tmp1 + tmp2 + tmp3
             elif self.like_type == 1:
-                EYcond_mat = self.cond_exp_Y(phi, beta=beta, X_t=X_t)
+                EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
                 # divide the computation of the loglikelihood in 4 pieces
                 tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
                 tmp1 = - torch.sum(A_t) * torch.lgamma(dist_par_re)
@@ -1456,7 +1504,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         
         Y_t, X_t = self.get_train_obs_t(t)
         phi_t, _, beta_t = self.get_par_t(t)
-        EYcond_mat = self.cond_exp_Y(phi_t, beta=beta_t, X_t=X_t)
+        EYcond_mat = self.exp_of_fit_plus_reg(phi_t, beta=beta_t, X_t=X_t)
         EYcond_mat = putZeroDiag(EYcond_mat)
         A_t=putZeroDiag(Y_t)>0
         return torch.sum(Y_t[A_t])/torch.sum(EYcond_mat[A_t]), torch.mean(Y_t[A_t]/EYcond_mat[A_t])
@@ -1512,7 +1560,7 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
         if self.phi_tv:
             sigma_mat = self.link_dist_par(dist_par_un_t, self.N)
-            log_cond_exp_Y, log_cond_exp_Y_restr, cond_exp_Y = self.cond_exp_Y(phi_t, beta=beta_t, X_t=X_t, ret_all=True)
+            log_cond_exp_Y, log_cond_exp_Y_restr, cond_exp_Y = self.exp_of_fit_plus_reg(phi_t, beta=beta_t, X_t=X_t, ret_all=True)
 
             if self.distr == 'gamma':
                 tmp = (Y_t.clone()/cond_exp_Y - A_t)*sigma_mat
@@ -1582,9 +1630,8 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
     def info_filter(self):
         return self.model_class + super().info_filter()
 
-        
-
 # Binary Graphs
+
 
 class dirBin1_sequence_ss(dirGraphs_sequence_ss):
 
@@ -1605,18 +1652,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
         of the inverses of odds obtained as products of exponentials
         In the paper we call it 1 / pi = exp(phi_i + phi_j)
         """
-        phi_i, phi_o = splitVec(phi)
-        log_inv_pi_mat = phi_i + phi_o.unsqueeze(1)
-        if X_t is not None:
-            log_inv_pi_mat = log_inv_pi_mat + self.regr_product(beta, X_t)
-        if self.avoid_ovflw_fun_flag:
-            """if required force the exponent to stay whithin overflow-safe bounds"""
-            log_inv_pi_mat =  soft_lu_bound(log_inv_pi_mat, l_limit=self.ovflw_exp_L_limit, u_limit=self.ovflw_exp_U_limit)
-
-        if ret_log:
-            return putZeroDiag(log_inv_pi_mat)
-        else:
-            return putZeroDiag(torch.exp(log_inv_pi_mat))
+        return putZeroDiag(self.exp_of_fit_plus_reg(phi, beta, X_t, ret_log=ret_log, ret_all=False))
 
     def exp_A(self, phi, beta=None, X_t=None):
         """
@@ -1766,7 +1802,6 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
     def eval_prediction(self, Y_tp1, phi, beta, X_tp1):
         pass
 
-   
 
 class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
