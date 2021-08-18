@@ -83,7 +83,15 @@ def soft_l_bound(x, l_limit):
     return m(x) - m(- l_limit * torch.ones(1))
 
 
-
+def size_from_str(pox_str, N):
+        if type(pox_str) == int:
+            return pox_str
+        elif pox_str == "one":
+            return 1
+        elif pox_str == "N":
+            return N
+        elif pox_str == "2N":
+            return N * 2
 
 
 #

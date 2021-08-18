@@ -20,7 +20,7 @@ import numpy as np
 import pickle
 import copy
 from matplotlib import pyplot as plt
-from .utils.tensortools import splitVec, tens, putZeroDiag, putZeroDiag_T, soft_lu_bound, strIO_from_mat, strIO_from_tens_T
+from .utils.tensortools import splitVec, tens, putZeroDiag, putZeroDiag_T, soft_lu_bound, strIO_from_mat, strIO_from_tens_T, size_from_str
 from .utils.opt import optim_torch
 from .utils.graph_properties import MatrixSymmetry
 import itertools
@@ -351,8 +351,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t=None,   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
             opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None, opt_n=None):
 
-        super().__init__(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr, size_phi_t=self.size_from_str(size_phi_t), size_dist_par_un_t=self.size_from_str(size_dist_par_un_t), size_beta_t=self.size_from_str(size_beta_t), phi_id_type=phi_id_type, like_type=like_type)
-        
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
         
         self.Y_T = Y_T
@@ -368,6 +366,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             
         self.N = self.Y_T.shape[0]
 
+        super().__init__(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr, size_phi_t=self.size_from_str(size_phi_t), size_dist_par_un_t=self.size_from_str(size_dist_par_un_t), size_beta_t=self.size_from_str(size_beta_t), phi_id_type=phi_id_type, like_type=like_type)
+        
         self.X_T = X_T
 
         if self.X_T is None:
@@ -406,14 +406,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.init_all_par_sequences()
 
     def size_from_str(self, pox_str):
-        if type(pox_str) == int:
-            return pox_str
-        elif pox_str == "one":
-            return 1
-        elif pox_str == "N":
-            return self.N
-        elif pox_str == "2N":
-            return self.N * 2
+        return size_from_str(pox_str, self.N)
 
     def get_model_symmetry(self):
         self.check_size_phi()
@@ -615,7 +608,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             raise
 
     def identify_sequence_phi_T(self):    
-        for t in range(self.T_train):
+        if self.phi_tv:
+            T_to_identify = self.T_train
+        else:
+            T_to_identify = 1
+
+        for t in range(T_to_identify):
             phi_t = self.phi_T[t][:]
             phi_t_id_0 = self.identify_phi(phi_t)
             self.phi_T[t] = phi_t_id_0
@@ -653,12 +651,13 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.shift_sequence_phi_o_T_beta_const(c, x_T)
 
     def identify_sequence(self):
-        if self.identification_type == "phi_t":
-            self.identify_sequence_phi_T()
-        if self.identification_type == "phi_t_beta_t":
-            self.identify_sequence_phi_T_beta_T()
-        if self.identification_type == "phi_t_beta_const":
-            self.identify_sequence_phi_T_beta_const()
+        with torch.no_grad():
+            if self.identification_type == "phi_t":
+                self.identify_sequence_phi_T()
+            if self.identification_type == "phi_t_beta_t":
+                self.identify_sequence_phi_T_beta_T()
+            if self.identification_type == "phi_t_beta_const":
+                self.identify_sequence_phi_T_beta_const()
 
     def check_regressors_seq_shape(self):
         """
@@ -754,8 +753,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
                     self.phi_T[t].requires_grad = True
             else:
-                raise
-        
+                Y_mean = self.Y_T.mean(dim=2)
+                self.phi_T[0] = self.start_phi_from_obs(Y_mean)
+                
             self.identify_sequence()
 
         for phi in self.phi_T:
@@ -804,7 +804,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 ax[i].plot(x, beta_T[:,:,i].T)
         return fig, ax
         
-    def set_par_dict_to_save(self):
+    def set_par_dict_to_opt_and_save(self):
 
         self.par_dict_to_save = {}
         self.par_dict_to_save["phi_T"] = self.phi_T
@@ -833,7 +833,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         if not self.start_opt_from_current_par:
             self.init_phi_T_from_obs()
 
-        self.set_par_dict_to_save()
+        self.set_par_dict_to_opt_and_save()
 
         self.start_opt_from_current_par = True
 
@@ -1023,16 +1023,13 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         score_dict = self.score_t(t)
 
-        if self.phi_tv:
-
-           
+        if self.phi_tv:         
             s = score_dict["phi"]
             w = self.sd_stat_par_un_phi["w"]
             B = self.un2re_B_par(self.sd_stat_par_un_phi["B"])  
             A = self.un2re_A_par(self.sd_stat_par_un_phi["A"])  
             phi_tp1 = w + torch.mul(B, phi_t) + torch.mul(A, s)
 
-           
             self.phi_T[t+1] = phi_tp1
 
         if self.dist_par_tv:            
@@ -1119,7 +1116,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def info_opt_par(self):
         return self.str_from_dic(self.opt_options_sd)
 
-    def set_par_dict_to_save(self):
+    def set_par_dict_to_opt_and_save(self):
         # dict define for consistency with non sd version
         self.par_dict_to_save = {}
         # define list of parameters to be optimized
@@ -1178,7 +1175,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
             self.estimate_ss_t(0, True, self.beta_T is not None, self.dist_par_un_T is not None)
        
-        self.set_par_dict_to_save()
+        self.set_par_dict_to_opt_and_save()
 
         def obj_fun():
             self.roll_sd_filt_train()
@@ -1186,10 +1183,11 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
           
       
         logger.info(f"setting unconditional mean to reasonable value ")
-        mean_mat_mod = dirSpW1_sequence_ss(self.Y_T.mean(dim=(2)).unsqueeze(dim=2))
+        mean_mat_mod = dirSpW1_sequence_ss(self.Y_T.mean(dim=(2)).unsqueeze(dim=2), size_phi_t=self.size_phi_t)
         mean_mat_mod.estimate_ss_t(0, True, False, False)
         start_unc_mean = mean_mat_mod.phi_T[0]
-        self.set_unc_mean(start_unc_mean, self.sd_stat_par_un_phi)
+        if self.phi_tv:
+            self.set_unc_mean(start_unc_mean, self.sd_stat_par_un_phi)
 
         
         run_name = self.info_filter()
@@ -1223,8 +1221,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             logger.info("Loading")
             self.load_par(l_s_path)
  
-   
-    
     def init_par_from_lower_model(self, lower_model):
         """
         For each set of par (phi, dist_par_un, beta), check if present in lower. if so use it to set corresponding self par
@@ -1287,8 +1283,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             logger.info(f"lower model likelihood {lower_model.loglike_seq_T()}, upper model likelihood {self.loglike_seq_T()}")
         except:
             logger.error(f"lower model likelihood {lower_model.loglike_seq_T()}, upper model likelihood {self.loglike_seq_T()}")
-
-
 
     def get_n_par(self):
         n_par = 0
@@ -1378,11 +1372,11 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
     def __init__(self, *args, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, **kwargs):
-
+        
         super().__init__( *args, distr = distr, like_type=like_type,  size_dist_par_un_t = size_dist_par_un_t, dist_par_tv= dist_par_tv, **kwargs)
 
         self.model_class = "dirSpW1"
-        self.bin_mod = dirBin1_sequence_ss(torch.zeros(10, 10, 20))
+        self.bin_mod = dirBin1_sequence_ss(torch.zeros(10, 10, 20), size_phi_t = "2N" )
 
     def exp_Y(self, phi, beta, X_t):
         return self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
@@ -1395,17 +1389,19 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         S_sqrt = S_i.sum().sqrt()
         K_i = A_t.sum(dim=0)
         K_o = A_t.sum(dim=1)
-        phi_t_0_i = torch.log(S_i/S_sqrt )#* (N/K_i) )
-        phi_t_0_o = torch.log(S_o/S_sqrt )#* (N/K_o) )
+        if self.size_phi_t == 2*self.N:
+            phi_t_0_i = torch.log(S_i/S_sqrt )#* (N/K_i) )
+            phi_t_0_o = torch.log(S_o/S_sqrt )#* (N/K_o) )
 
-        phi_t_0 = torch.cat((phi_t_0_i, phi_t_0_o))
+            phi_t_0 = torch.cat((phi_t_0_i, phi_t_0_o))
 
-        max_val = phi_t_0[~torch.isnan(phi_t_0)].max()
-        phi_t_0[torch.isnan(phi_t_0)] = -max_val
-        phi_t_0[~torch.isfinite(phi_t_0)] = - max_val
-        phi_t_0_i[K_i == 0] = - max_val
-        phi_t_0_o[K_o == 0] = - max_val
-
+            max_val = phi_t_0[~torch.isnan(phi_t_0)].max()
+            phi_t_0[torch.isnan(phi_t_0)] = -max_val
+            phi_t_0[~torch.isfinite(phi_t_0)] = - max_val
+            phi_t_0_i[K_i == 0] = - max_val
+            phi_t_0_o[K_o == 0] = - max_val
+        else:
+            raise Exception("Not ready yet")
         return self.identify_phi(phi_t_0)
 
     def dist_from_pars(self, phi, beta, X_t, dist_par_un, A_t=None):
@@ -1738,16 +1734,19 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
         return torch.cat((out_phi_i, out_phi_o))
 
     def start_phi_from_obs(self, Y, n_iter=30, degIO=None):
-        if degIO is None:
-            degIO = tens(strIO_from_mat(Y))
-        ldeg = degIO.log()
-        nnzInds = degIO > 0
-        phi_0 = torch.ones(degIO.shape[0]) * (-15)
-        phi_0[nnzInds] = degIO[nnzInds].log()
-        for i in range(n_iter):
-            phi_0 = self.phiFunc(phi_0, ldeg)
-            #phi_0[~nnzInds] = -15
-        phi_0 = self.set_zero_deg_par(Y, phi_0, degIO=degIO)
+        if self.size_phi_t == 2*self.N:    
+            if degIO is None:
+                degIO = tens(strIO_from_mat(Y))
+            ldeg = degIO.log()
+            nnzInds = degIO > 0
+            phi_0 = torch.ones(degIO.shape[0]) * (-15)
+            phi_0[nnzInds] = degIO[nnzInds].log()
+            for i in range(n_iter):
+                phi_0 = self.phiFunc(phi_0, ldeg)
+                #phi_0[~nnzInds] = -15
+            phi_0 = self.set_zero_deg_par(Y, phi_0, degIO=degIO)
+        else: 
+            raise
         return phi_0.clone()
 
     def dist_from_pars(self, phi, beta, X_t, dist_par_un, A_t=None):
