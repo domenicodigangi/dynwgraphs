@@ -34,7 +34,7 @@ X_T_test = X_T_matrix
 N, _, T = Y_T.shape
 
 # %% Test single snapshot estimates of  phi_t
-model = dirBin1_sequence_ss(Y_T, X_T=X_T_test, size_beta_t=1, avoid_ovflw_fun_flag=True) # 'lognormal')
+model = dirBin1_sequence_ss(Y_T, X_T=X_T_test, size_beta_t=1, avoid_ovflw_fun_flag=True, size_phi_t = "2N") # 'lognormal')
 model.opt_options_ss_t["max_opt_iter"] = 50
 
 t=1
@@ -67,16 +67,27 @@ phi_t_identified, beta_id = model.identify_phi_io_beta(phi_t_identified, beta_t,
 
 
 # %% Test Score driven estimates of  phi_T
-model = dirBin1_SD(Y_T, avoid_ovflw_fun_flag=True, rescale_SD=True) # 'lognormal')
+model = dirBin1_SD(Y_T, size_phi_t="2N", phi_tv = True, avoid_ovflw_fun_flag=True, rescale_SD=True) # 'lognormal')
 
-model = dirBin1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], beta_tv=[ False], avoid_ovflw_fun_flag=True, rescale_SD=False) # 'lognormal')
+model = dirBin1_SD(Y_T, size_phi_t="2N", phi_tv = False, avoid_ovflw_fun_flag=True, rescale_SD=True) # 'lognormal')
 
-model.opt_options_sd["max_opt_iter"] = 20
-model.opt_options_sd["opt_n"] = "ADAM"
+model = dirBin1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], size_phi_t="2N", phi_tv = False,  size_beta_t = "2N", beta_tv=[ False], avoid_ovflw_fun_flag=True, rescale_SD=False) # 'lognormal')
+
+model = dirBin1_SD(Y_T, X_T=X_T_test[:,:,0:1,:], size_phi_t="2N", phi_tv = False,  size_beta_t = "one", beta_tv=[True], avoid_ovflw_fun_flag=True, rescale_SD=False) # 'lognormal')
 
 
+model.opt_options_sd["max_opt_iter"] = 21
 
-optimizer = model.estimate_sd()
+optimizer = model.estimate()
+
+model.beta_T
+
+#%%
+
+model.sd_stat_par_un_phi["w"].requires_grad
+model.sd_stat_par_un_beta["w"].requires_grad
+model.par_l_to_opt[0]
+
 
 model.get_seq_latent_par()
 

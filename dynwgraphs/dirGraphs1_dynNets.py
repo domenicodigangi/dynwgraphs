@@ -95,7 +95,7 @@ class dirGraphs_funs(nn.Module):
             prod = beta_t * X_t
         elif beta_t.shape[0] == self.N:
             # one parameter for each node for each regressor, i.e. same effect on in and out connections
-            prod = beta_t * beta_t.unsqueeze(1) * X_t
+            prod = (beta_t * beta_t.unsqueeze(1)) * X_t
         elif beta_t.shape[0] == 2*self.N:
             # two parameters (in and out connections) for each node for each regressor
             prod = (beta_t[:self.N, :] + beta_t[self.N:, :].unsqueeze(1)) * X_t
@@ -348,7 +348,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     _opt_options_ss_seq_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
     # set default init kwargs to be shared between binary and weighted models
-    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t=None,   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
+    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
             opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None, opt_n=None):
 
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
@@ -450,13 +450,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                     raise
         else:
             if self.any_beta_tv():
-                self.beta_T = [torch.ones(self.size_beta_t, self.n_reg, requires_grad=True) for t in range(self.T_all)]
+                self.beta_T = [torch.ones(self.size_beta_t, self.n_reg, requires_grad=False) for t in range(self.T_all)]
             else:
-                self.beta_T = [torch.ones(self.size_beta_t, self.n_reg, requires_grad=True)]
+                self.beta_T = [torch.ones(self.size_beta_t, self.n_reg, requires_grad=False)]
 
-            with torch.no_grad():
-                for t, beta_t in enumerate(self.beta_T):
-                    self.beta_T[t] = beta_t * self.beta_start_val 
+            for t, beta_t in enumerate(self.beta_T):
+                self.beta_T[t] = beta_t * self.beta_start_val 
 
             for b in self.beta_T:
                 b.requires_grad = True
@@ -651,13 +650,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.shift_sequence_phi_o_T_beta_const(c, x_T)
 
     def identify_sequence(self):
-        with torch.no_grad():
-            if self.identification_type == "phi_t":
-                self.identify_sequence_phi_T()
-            if self.identification_type == "phi_t_beta_t":
-                self.identify_sequence_phi_T_beta_T()
-            if self.identification_type == "phi_t_beta_const":
-                self.identify_sequence_phi_T_beta_const()
+        if self.identification_type == "phi_t":
+            self.identify_sequence_phi_T()
+        if self.identification_type == "phi_t_beta_t":
+            self.identify_sequence_phi_T_beta_T()
+        if self.identification_type == "phi_t_beta_const":
+            self.identify_sequence_phi_T_beta_const()
 
     def check_regressors_seq_shape(self):
         """
@@ -751,15 +749,15 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                     elif self.phi_par_init_type == "zeros":
                         self.phi_T[t] = torch.zeros(self.phi_T[t].shape)         
 
-                    self.phi_T[t].requires_grad = True
             else:
                 Y_mean = self.Y_T.mean(dim=2)
                 self.phi_T[0] = self.start_phi_from_obs(Y_mean)
                 
             self.identify_sequence()
 
-        for phi in self.phi_T:
-            phi.requires_grad=True
+        for phi_t in self.phi_T:
+            phi_t.requires_grad = True
+
 
     def plot_phi_T(self, x=None, i=None, fig_ax=None):
         if x is None:
@@ -1096,9 +1094,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         for t in range(1, T_last):
             self.update_dynw_par(t)
-
-        self.identify_sequence()
-
+        
+        # self.identify_sequence()
+        
     def roll_sd_filt_train(self):
         self.roll_sd_filt(self.T_train)
 
@@ -1182,17 +1180,20 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             return - self.loglike_seq_T()
           
       
-        logger.info(f"setting unconditional mean to reasonable value ")
-        mean_mat_mod = dirSpW1_sequence_ss(self.Y_T.mean(dim=(2)).unsqueeze(dim=2), size_phi_t=self.size_phi_t)
-        mean_mat_mod.estimate_ss_t(0, True, False, False)
-        start_unc_mean = mean_mat_mod.phi_T[0]
         if self.phi_tv:
+            logger.info(f"setting unconditional mean to reasonable value ")
+            mean_mat_mod = dirSpW1_sequence_ss(self.Y_T.mean(dim=(2)).unsqueeze(dim=2), size_phi_t=self.size_phi_t)
+            mean_mat_mod.estimate_ss_t(0, True, False, False)
+            start_unc_mean = mean_mat_mod.phi_T[0]
             self.set_unc_mean(start_unc_mean, self.sd_stat_par_un_phi)
 
         
         run_name = self.info_filter()
         
-        return optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
+        opt_res = optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
+
+      
+        return opt_res
         
     def estimate(self, **kwargs):
         try:

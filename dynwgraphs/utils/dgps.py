@@ -190,7 +190,10 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
             if unc_mean_beta.shape[0] != size_beta_t:
                 raise
         elif type(unc_mean_beta) == float:
-            unc_mean_beta = unc_mean_beta +  torch.randn(size_beta_t, dgp_set_dict["n_ext_reg"])
+            if size_beta_t > 1:
+                unc_mean_beta = unc_mean_beta +  torch.randn(size_beta_t, dgp_set_dict["n_ext_reg"])
+            else:
+                unc_mean_beta = unc_mean_beta * torch.ones(size_beta_t, dgp_set_dict["n_ext_reg"])
         else:
             raise
 
