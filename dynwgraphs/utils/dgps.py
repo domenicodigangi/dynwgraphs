@@ -142,25 +142,21 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
     # set reference values for dgp
     if phi_0 == "ref_mat":
         phi_0 = mod_tmp.start_phi_from_obs(Y_reference)
-    elif phi_dgp_type == "const_unif":
-        phi_0 = float(phi_0)
+    elif phi_dgp_type[:11] == "const_unif_":
+        exp_a = float(phi_dgp_type[11:])
+        phi_0 = torch.randn(size_phi_t) + torch.ones(size_phi_t)*0.5*torch.log(tens(exp_a /(1 - exp_a)))
     else:
         raise
 
-    if phi_dgp_type == "const_unif":
-        if bin_or_w == "bin":
-            exp_a = phi_0
-            phi_0 = torch.ones(size_phi_t)*0.5*torch.log(tens(exp_a /(1 - exp_a)))
-            phi_T_dgp = sample_par_vec_dgp_ar(mod_tmp, phi_0, 0, 0, T)
-            phi_tv =True
+    phi_tv = dgp_set_dict["phi_tv"]
+
+    if phi_tv:
+        if phi_dgp_type == "AR":
+            phi_T_dgp = sample_par_vec_dgp_ar(mod_tmp, phi_0, B_phi, sigma_phi, T)
         else:
             raise
-
-    elif phi_dgp_type == "AR":
-        phi_T_dgp = sample_par_vec_dgp_ar(mod_tmp, phi_0, B_phi, sigma_phi, T)
-        phi_tv =True
     else:
-        raise
+        phi_T_dgp = [phi_0]
 
 
     # dgp for coefficients of ext reg beta
@@ -176,12 +172,18 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
         if X_cross_type == "uniform":
             if len(beta_tv) != 1:
                 raise
-            
             if X_dgp_type == "AR":
                 x_T = dgpAR(unc_mean_X, B_X, sigma_X, T).unsqueeze(dim=1)
             X_T = tens(np.tile(x_T, (N, N, 1, 1)))
-        else:
-            raise
+        elif X_cross_type == "link_specific":
+            if len(beta_tv) != 1:
+                raise
+            if X_dgp_type == "AR":
+                X_T = torch.zeros(N, N, 1, T)
+                for i in range(N):
+                    for j in range(N):
+                        if i!=j:
+                            X_T[i, j, 0, :] = dgpAR(unc_mean_X, B_X, sigma_X, T).unsqueeze(dim=1)
 
         # sample reg coeff
         beta_dgp_type, unc_mean_beta, B_beta, sigma_beta = dgp_set_dict["type_tv_dgp_beta"]
@@ -189,7 +191,7 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
             unc_mean_beta = 1 + torch.randn(size_beta_t, dgp_set_dict["n_ext_reg"])
             if unc_mean_beta.shape[0] != size_beta_t:
                 raise
-        elif type(unc_mean_beta) == float:
+        elif type(unc_mean_beta) in [float, int]:
             if size_beta_t > 1:
                 unc_mean_beta = unc_mean_beta +  torch.randn(size_beta_t, dgp_set_dict["n_ext_reg"])
             else:

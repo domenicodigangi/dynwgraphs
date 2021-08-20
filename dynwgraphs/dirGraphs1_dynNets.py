@@ -290,6 +290,7 @@ class dirGraphs_funs(nn.Module):
             Z_t = None
         return Z_t
     
+
     def sample_Y_T_from_par_list(self, T, phi_T, beta_T=None, X_T=None, dist_par_un_T=None, avoid_empty=True, A_T=None):
 
         if beta_T is not None:
@@ -616,7 +617,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             phi_t = self.phi_T[t][:]
             phi_t_id_0 = self.identify_phi(phi_t)
             self.phi_T[t] = phi_t_id_0
-                        
+                    
     def identify_sequence_phi_T_beta_T(self):    
         for t in range(self.T_train):
             #as first step, identify phi_io
@@ -1021,7 +1022,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         score_dict = self.score_t(t)
 
-        if self.phi_tv:         
+        if self.phi_tv:    
             s = score_dict["phi"]
             w = self.sd_stat_par_un_phi["w"]
             B = self.un2re_B_par(self.sd_stat_par_un_phi["B"])  
@@ -1094,9 +1095,10 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         for t in range(1, T_last):
             self.update_dynw_par(t)
-        
-        # self.identify_sequence()
-        
+
+        if self.phi_tv:
+            self.identify_sequence()
+                
     def roll_sd_filt_train(self):
         self.roll_sd_filt(self.T_train)
 
@@ -1179,14 +1181,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.roll_sd_filt_train()
             return - self.loglike_seq_T()
           
-      
-        if self.phi_tv:
-            logger.info(f"setting unconditional mean to reasonable value ")
-            mean_mat_mod = dirSpW1_sequence_ss(self.Y_T.mean(dim=(2)).unsqueeze(dim=2), size_phi_t=self.size_phi_t)
-            mean_mat_mod.estimate_ss_t(0, True, False, False)
-            start_unc_mean = mean_mat_mod.phi_T[0]
-            self.set_unc_mean(start_unc_mean, self.sd_stat_par_un_phi)
-
         
         run_name = self.info_filter()
         
@@ -1554,7 +1548,7 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
             if self.rescale_SD:
                 pass
                 # raise "Rescaling not ready for beta and dist par"
-
+        
         if self.phi_tv:
             sigma_mat = self.link_dist_par(dist_par_un_t, self.N)
             log_cond_exp_Y, log_cond_exp_Y_restr, cond_exp_Y = self.exp_of_fit_plus_reg(phi_t, beta=beta_t, X_t=X_t, ret_all=True)
@@ -1737,7 +1731,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
     def start_phi_from_obs(self, Y, n_iter=30, degIO=None):
         if self.size_phi_t == 2*self.N:    
             if degIO is None:
-                degIO = tens(strIO_from_mat(Y))
+                degIO = tens(strIO_from_mat(Y)).squeeze()
             ldeg = degIO.log()
             nnzInds = degIO > 0
             phi_0 = torch.ones(degIO.shape[0]) * (-15)
