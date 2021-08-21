@@ -377,16 +377,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.n_beta_tv = None
         else:
             self.n_reg = self.X_T.shape[2]
-            if type(beta_tv) == bool:
-                self.beta_tv = tens([beta_tv for p in range(self.n_reg)] ).bool()
-            elif type(beta_tv) in [list, torch.Tensor]:
-                self.beta_tv = tens(beta_tv).bool()
-            else:
-                raise
+            self.beta_tv = self.tv_flag_list_from_input(beta_tv)
+
             self.n_beta_tv = sum(self.beta_tv)
 
         self.phi_par_init_type = phi_par_init_type
-        self.phi_tv = phi_tv
+        self.phi_tv = self.tv_flag_bool_from_input(phi_tv)
         self.dist_par_tv = dist_par_tv
         self.beta_start_val = beta_start_val
         self.reg_cross_unique = self.check_regressors_cross_uniqueness()
@@ -406,8 +402,65 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.model_symmetry = self.get_model_symmetry()
         self.init_all_par_sequences()
 
+        self.check_types()
+
+
+    def check_types(self):
+        if self.beta_tv is not None:
+            if type(self.beta_tv) in [list, torch.Tensor]:
+                if type(self.beta_tv[0]) == bool:
+                    pass
+                elif type(self.beta_tv[0]) == torch.Tensor:
+                    assert type(self.beta_tv[0].item()) == bool
+                else:
+                    raise TypeError()
+            else:
+                raise TypeError()
+        
+        if self.phi_tv is not None:
+            if type(self.phi_tv) == bool:
+                pass
+            else:
+                raise TypeError()
+        
+        if self.dist_par_tv is not None:
+            if type(self.dist_par_tv) == bool:
+                pass
+            else:
+                raise TypeError()
+        
+
     def size_from_str(self, pox_str):
         return size_from_str(pox_str, self.N)
+
+    def tv_flag_list_from_input(self, beta_tv):
+        if type(beta_tv) == str:
+            if ("[" in beta_tv) and ("]" in beta_tv):
+                return eval(beta_tv)
+            elif beta_tv in ["True", "False"]:
+                return self.tv_flag_list_from_input(eval(beta_tv))
+            else:
+                raise Exception("String must encode a list")
+        elif type(beta_tv) == bool:
+            return tens([beta_tv for p in range(self.n_reg)] ).bool()
+        elif type(beta_tv) in [list, torch.Tensor]:
+            return tens(beta_tv).bool()
+        else:
+            raise Exception("Wrong type for beta_tv")
+            
+
+    def tv_flag_bool_from_input(self, tv_flag):
+        if type(tv_flag) == str:
+            return bool(eval(tv_flag))
+        elif tv_flag in [True, False]:
+            return tv_flag
+        elif tv_flag == 1:
+            return True
+        elif tv_flag == 0:
+            return False
+        else:
+            raise TypeError()
+
 
     def get_model_symmetry(self):
         self.check_size_phi()
@@ -1096,8 +1149,8 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         for t in range(1, T_last):
             self.update_dynw_par(t)
 
-        if self.phi_tv:
-            self.identify_sequence()
+        # if self.phi_tv:
+            # self.identify_sequence()
                 
     def roll_sd_filt_train(self):
         self.roll_sd_filt(self.T_train)
@@ -1876,4 +1929,49 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         return self.model_class + super().info_filter()
 
         
-        
+# Instantiate function
+
+def get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, **kwargs):
+    if (bin_or_w == "bin") and (ss_or_sd == "ss"):
+        return dirBin1_sequence_ss(Y_T, **kwargs)
+    elif (bin_or_w == "w") and (ss_or_sd == "ss"):
+        return dirSpW1_sequence_ss(Y_T, **kwargs)
+    elif (bin_or_w == "bin") and (ss_or_sd == "sd"):
+        return dirBin1_SD(Y_T, **kwargs)
+    elif (bin_or_w == "w") and (ss_or_sd == "sd"):
+        return dirSpW1_SD(Y_T, **kwargs)
+    else:
+        raise
+
+
+
+
+def get_model_from_run_dict(dgp_or_filt, bin_or_w, Y_T, X_T, run_d):
+
+    if dgp_or_filt == "dgp":
+        mod_in_names = ["size_phi_t", "phi_tv", "beta_tv", "size_beta_t"]
+        mod_str = f"{dgp_or_filt}_{bin_or_w}"
+        mod_par_dict = {k: run_d[f"{mod_str}_{k}"] for k in mod_in_names}
+        ss_or_sd = "ss"
+    elif dgp_or_filt[:4] == "filt":
+        ss_or_sd = dgp_or_filt[5:]
+        mod_in_names = ["phi_tv", "beta_tv"]
+        mod_str = f"filt_{bin_or_w}_{ss_or_sd}"
+        mod_par_dict = {k: run_d[f"{mod_str}_{k}"] for k in mod_in_names}
+        mod_in_names = ["size_phi_t", "size_beta_t"]
+        mod_str = f"filt_{bin_or_w}"
+        mod_par_dict.update({k: run_d[f"{mod_str}_{k}"] for k in mod_in_names})
+    else:
+        raise
+
+    out_mod =  get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, X_T=X_T, **mod_par_dict)
+    # if w mod init also it's binary submod
+    if bin_or_w  == "w":
+        bin_mod = get_model_from_run_dict(dgp_or_filt, "bin", Y_T, X_T, run_d)
+
+        out_mod.bin_mod = bin_mod
+
+    return out_mod
+
+
+
