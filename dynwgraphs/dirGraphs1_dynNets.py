@@ -41,7 +41,7 @@ class dirGraphs_funs(nn.Module):
     """
 
     #TO DO: move some unused attributes to child class
-    def __init__(self, avoid_ovflw_fun_flag=True, distr="", size_phi_t=None, size_dist_par_un_t=None, size_beta_t=None, like_type=None, phi_id_type=None):
+    def __init__(self, avoid_ovflw_fun_flag=True, distr="", size_phi_t=None, size_dist_par_un_t=None, size_beta_t=None, like_type=None, par_vec_id_type=None):
 
         super().__init__()
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
@@ -52,8 +52,7 @@ class dirGraphs_funs(nn.Module):
         self.like_type = like_type
         self.ovflw_exp_L_limit = -50
         self.ovflw_exp_U_limit = 40
-        self.phi_id_type = phi_id_type
-        self.beta_id_type = phi_id_type
+        self.par_vec_id_type = par_vec_id_type
         self.obs_type = "continuous_positive"
 
 
@@ -140,42 +139,50 @@ class dirGraphs_funs(nn.Module):
     def exp_Y(self, phi, beta, X_t):
         pass
 
-    def identify_io_par_to_be_sum(self, phi, id_type):
+    def identify_io_par_to_be_sum(self, par_vec, id_type, inds_to_excl=None):
         """ enforce an identification condition on input and output parameters that are going to enter the pdf always as par_in_i + par_out_j 
         """
         # set the first in parameter to zero
-        phi_i, phi_o = splitVec(phi)
+        if inds_to_excl is not None:
+            if id_type == "first_in_zero":
+                if inds_to_excl[0] == True:
+                    raise Exception("cannot set first to zero and exclude it from identification as well")
+                elif inds_to_excl[0] == False:
+                    pass
+                else:
+                    raise Exception("If using non boolean indexing for inds_to_exclude, need to check that zero element is not being excluded")
+
+            par_vec = torch.where(~inds_to_excl, par_vec, torch.tensor(0.0))
+
+        par_vec_i, par_vec_o = splitVec(par_vec)
+
         if id_type == "first_in_zero":
             """set one to zero"""
-            d = phi_i[0]
+            d = par_vec_i[0]
         elif id_type == "in_sum_eq_out_sum":
             """set sum of in parameters equal to sum of out par """
-            d = (phi_i.mean() - phi_o.mean())/2
+            d = (par_vec_i.mean() - par_vec_o.mean())/2
         elif id_type == "in_sum_zero":
             """set sum of in parameters to zero """
-            d = phi_i.mean()
+            d = par_vec_i.mean()
        
-        phi_i_out = phi_i - d
-        phi_o_out = phi_o + d
-        return torch.cat((phi_i_out, phi_o_out))
+        par_vec_i_out = par_vec_i - d
+        par_vec_o_out = par_vec_o + d
         
-    def identify_phi_io(self, phi):
-        """ enforce an identification condition on the phi parameters for a single snapshot
-        """
-        return self.identify_io_par_to_be_sum(phi, self.phi_id_type)
+        par_vec_out = torch.cat((par_vec_i_out, par_vec_o_out))
+        
+        if inds_to_excl is not None:
+            par_vec_out = torch.where(~inds_to_excl, par_vec_out, torch.tensor(0.0))
 
-    def identify_beta_io(self, beta):
-        if beta.shape[0] == 1:
-            return beta
-        else:
-            return self.identify_io_par_to_be_sum(self, beta, self.beta_id_type)
+        return par_vec_out
+        
 
-    def identify_phi_io_beta(self, phi, beta, x):
+    def identify_phi_io_and_const_unif_beta(self, phi, beta, x):
         """ enforce an identification condition on the phi and beta parameters for a single snapshot, needed in case of uniform beta
         """
         # set the first in parameter to zero
         phi_i, phi_o = splitVec(phi)
-        if self.phi_id_type != "in_sum_zero":
+        if self.par_vec_id_type != "in_sum_zero":
             raise
         else:
             if (~ torch.isclose(phi_i.mean(), torch.zeros(1), atol=1e-4)).any() :
@@ -349,7 +356,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     _opt_options_ss_seq_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
     # set default init kwargs to be shared between binary and weighted models
-    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  phi_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
+    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  par_vec_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
             opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None, opt_n=None):
 
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
@@ -367,7 +374,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             
         self.N = self.Y_T.shape[0]
 
-        super().__init__(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr, size_phi_t=self.size_from_str(size_phi_t), size_dist_par_un_t=self.size_from_str(size_dist_par_un_t), size_beta_t=self.size_from_str(size_beta_t), phi_id_type=phi_id_type, like_type=like_type)
+        super().__init__(avoid_ovflw_fun_flag=avoid_ovflw_fun_flag, distr=distr, size_phi_t=self.size_from_str(size_phi_t), size_dist_par_un_t=self.size_from_str(size_dist_par_un_t), size_beta_t=self.size_from_str(size_beta_t), par_vec_id_type=par_vec_id_type, like_type=like_type)
         
         self.X_T = X_T
 
@@ -386,7 +393,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.dist_par_tv = dist_par_tv
         self.beta_start_val = beta_start_val
         self.reg_cross_unique = self.check_regressors_cross_uniqueness()
-        self.identification_type = ""
+        self.identif_multi_par = ""
         self.check_id_required()
         
         self.opt_options_ss_t = opt_options_ss_t
@@ -403,6 +410,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.init_all_par_sequences()
 
         self.check_types()
+        self.inds_to_exclude_from_id = None
+
 
 
     def check_types(self):
@@ -516,6 +525,21 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.start_opt_from_current_par = False
 
+    def set_elements_from_par_seq_to(self, par_seq, inds,  val):
+        for ind, par_tens in enumerate(par_seq):
+            par_seq[ind] = torch.where(inds, val, par_tens)
+
+    def set_par_to_exclude_to_zero(self):
+        if self.inds_to_exclude_from_id is not None:
+            if self.size_phi_t == self.N:
+                raise Exception("NEed to check how to handle nver observed fitnesses for undireceted networks")
+            if self.size_phi_t == 2*self.N:
+                self.set_elements_from_par_seq_to(self.phi_T, self.inds_to_exclude_from_id, torch.tensor(0.0))
+            if self.size_beta_t == 2*self.N:
+                self.set_elements_from_par_seq_to(self.beta_T, self.inds_to_exclude_from_id, torch.tensor(0.0))
+            if self.size_dist_par_un_t == 2*self.N:
+                self.set_elements_from_par_seq_to(self.beta_T, self.inds_to_exclude_from_id, torch.tensor(0.0))
+
     def get_Y_t(self, t):
         return self.Y_T[:,:,t]
 
@@ -579,26 +603,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def check_id_required(self):
         
         # do not identify beta for the moment
-        self.identification_type = "phi_t"#        
+        self.identif_multi_par = "independent_id"#        
 
-        # if any(self.reg_cross_unique):
-        #     if sum(self.reg_cross_unique) >1 :
-        #         raise
-        #     if self.any_beta_tv():
-        #         if sum(self.beta_tv) >1 :
-        #             raise
-        #         if self.reg_cross_unique[self.beta_tv]:
-        #             # tv beta for uniform regressor
-        #             self.identification_type = "phi_t_beta_t"#
-        #         else:
-        #             raise # to be checked
-        #             self.identification_type = "phi_t"#
-
-        #     else:
-        #         #constant beta for uniform regressor
-        #         self.identification_type = "phi_t_beta_const"#
-        # else:
-        #     self.identification_type = "phi_t"#        
 
     def shift_sequence_phi_o_T_beta_const(self, c, x_T):    
         beta_t_all = self.beta_T[0].clone()
@@ -652,46 +658,35 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         logL = self.loglike_seq_T().detach()
         return  k * np.log(n) - 2 * logL
 
-    def identify_phi(self, phi_t):
-        if self.size_phi_t in [None, 0, self.N]:
-            return phi_t
-        elif self.size_phi_t == 2* self.N:
-            return self.identify_phi_io(phi_t)
+    def identify_par_vec(self, par_vec, id_type):
+        if par_vec is None:
+            return par_vec
         else:
-            raise
+            n_par = par_vec.shape[0]
 
-    def identify_sequence_phi_T(self):    
-        if self.phi_tv:
-            T_to_identify = self.T_train
-        else:
-            T_to_identify = 1
+            if n_par in [None, 1, self.N]:
+                return par_vec
+            elif n_par == 2* self.N:
+                return self.identify_io_par_to_be_sum(par_vec, id_type, self.inds_to_exclude_from_id) 
+            else:
+                raise Exception(f"No identification setting for lenght = {n_par}")
 
-        for t in range(T_to_identify):
-            phi_t = self.phi_T[t][:]
-            phi_t_id_0 = self.identify_phi(phi_t)
-            self.phi_T[t] = phi_t_id_0
+    def identify_par_seq_T(self, par_seq):    
+        if par_seq is not None:
+            for t, par_vec in enumerate(par_seq):
+                par_t = par_seq[t]
+                par_t_id_0 = self.identify_par_vec(par_t, self.par_vec_id_type)
+                par_seq[t] = par_t_id_0
                     
-    def identify_sequence_phi_T_beta_T(self):    
-        for t in range(self.T_train):
-            #as first step, identify phi_io
-            phi_t = self.phi_T[t][:]
-            phi_t_id_0 = self.identify_phi(phi_t)
-                        
-            beta_t = self.beta_T[t][:, self.reg_cross_unique]
-            x_t = self.get_X_t(t)[0, 0, self.reg_cross_unique]
-            self.phi_T[t][:], self.beta_T[t][:, self.reg_cross_unique] = self.identify_phi_beta(phi_t_id_0, beta_t, x_t )    
 
-            self.phi_T[t] = phi_t_id_0
-
-    def identify_sequence_phi_T_beta_const(self):    
+    def identify_sequences_phi_T_beta_const(self):    
         x_T = self.X_T[0, 0, self.reg_cross_unique, :].squeeze()
         phi_o_T_sum = sum([phi[self.N:].mean() for phi in self.phi_T ])
         x_T_sum = x_T.sum()
         for t in range(self.T_train):
             #as first step, identify phi_io
             phi_t = self.phi_T[t][:]
-            phi_t_id_0 = self.identify_phi(phi_t)
-                        
+            phi_t_id_0 = self.identify_par_vec(phi_t, self.par_vec_id_type)     
             self.phi_T[t] = phi_t_id_0
     
             if sum(self.reg_cross_unique) > 1:
@@ -703,13 +698,21 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
             self.shift_sequence_phi_o_T_beta_const(c, x_T)
 
-    def identify_sequence(self):
-        if self.identification_type == "phi_t":
-            self.identify_sequence_phi_T()
-        if self.identification_type == "phi_t_beta_t":
-            self.identify_sequence_phi_T_beta_T()
-        if self.identification_type == "phi_t_beta_const":
-            self.identify_sequence_phi_T_beta_const()
+    def identify_sequences(self, id_phi=True, id_beta=True, id_dist_par=True):
+        if self.identif_multi_par == "independent_id":
+            if id_phi:
+                self.identify_par_seq_T(self.phi_T)
+            if id_beta:
+                self.identify_par_seq_T(self.beta_T)
+            if id_dist_par:
+                self.identify_par_seq_T(self.dist_par_un_T)
+
+        if self.identif_multi_par == "phi_t_beta_const":
+            raise Exception("need to check it before using it")
+
+    def identify_sequences_tv_par(self):
+        self.identify_sequences(id_phi=self.phi_tv, id_beta=self.beta_tv, id_dist_par=self.dist_par_tv)
+
 
     def check_regressors_seq_shape(self):
         """
@@ -807,7 +810,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 Y_mean = self.Y_T.mean(dim=2)
                 self.phi_T[0] = self.start_phi_from_obs(Y_mean)
                 
-            self.identify_sequence()
+            self.identify_sequences()
 
         for phi_t in self.phi_T:
             phi_t.requires_grad = True
@@ -819,6 +822,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         phi_T, _, _ = self.get_seq_latent_par()
         if phi_T.shape[1] ==1:
             phi_T = phi_T.repeat_interleave(x.shape[0], dim=1)
+
+        if self.inds_to_exclude_from_id is not None:
+            phi_T[self.inds_to_exclude_from_id, :] = float('nan')
+
         if i is not None:
             phi_i_T = (phi_T[:self.N,:])[i,:]
             phi_o_T = (phi_T[self.N:,:])[i,:]
@@ -896,7 +903,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         opt_out = optim_torch(obj_fun, self.par_l_to_opt, max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
 
-        self.identify_sequence()
+        self.identify_sequences()
 
         return opt_out
 
@@ -973,6 +980,16 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         logger.warn(f"Out of sample eval for ss sequences not ready. returning ")
         return {"auc_score":0}
 
+    def set_inds_to_exclude_from_id(self):
+        pass
+
+    def sample_Y_T(self):
+        pass
+
+
+    def sample_and_set_Y_T(self, **kwargs):
+        self.Y_T = self.sample_Y_T(**kwargs)
+        self.set_inds_to_exclude_from_id()
 
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
@@ -1149,8 +1166,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         for t in range(1, T_last):
             self.update_dynw_par(t)
 
-        if self.phi_tv:
-            self.identify_sequence()
+        self.identify_sequences_tv_par()
                 
     def roll_sd_filt_train(self):
         self.roll_sd_filt(self.T_train)
@@ -1426,6 +1442,19 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         self.model_class = "dirSpW1"
         self.bin_mod = dirBin1_sequence_ss(torch.zeros(10, 10, 20), size_phi_t = "2N" )
 
+        self.set_inds_to_exclude_from_id()
+
+
+    def set_inds_to_exclude_from_id(self):
+        self.inds_to_exclude_from_id = strIO_from_tens_T(self.Y_T) == 0
+        if all(self.inds_to_exclude_from_id):
+            logger.warning("All parameters would be ignored. Assuming that this is a test model and setting inds_to_exclude_from_id = None")
+            self.inds_to_exclude_from_id = None
+        
+        self.set_par_to_exclude_to_zero()
+
+                        
+
     def exp_Y(self, phi, beta, X_t):
         return self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
 
@@ -1450,7 +1479,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
             phi_t_0_o[K_o == 0] = - max_val
         else:
             raise Exception("Not ready yet")
-        return self.identify_phi(phi_t_0)
+        return self.identify_par_vec(phi_t_0, self.par_vec_id_type)
 
     def dist_from_pars(self, phi, beta, X_t, dist_par_un, A_t=None):
         """
@@ -1572,6 +1601,8 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
+        
+        
 
     def score_t(self, t):
 

@@ -111,9 +111,7 @@ def sample_par_vec_dgp_ar(model, unc_mean, B, sigma, T, identify=True):
         par_T_sample_list = model.par_tens_T_to_list(par_T_sample_mat)
 
         if identify:
-            for t in range(T):
-                #as first step, identify phi_io
-                par_T_sample_list[t] = model.identify_phi_io(par_T_sample_list[t])
+            model.identify_par_seq_T(par_T_sample_list)
 
         return par_T_sample_list
 
@@ -226,6 +224,7 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
 
         mod_dgp = dirSpW1_sequence_ss(torch.zeros(N, N, T), X_T=X_T, size_phi_t=size_phi_t, phi_tv=phi_tv, beta_tv=beta_tv, size_beta_t=size_beta_t) 
 
+    mod_dgp.inds_to_exclude_from_id
     mod_dgp.phi_T = phi_T_dgp
     mod_dgp.beta_T = beta_T_dgp
     mod_dgp.dist_par_un_T = dist_par_un_T_dgp
