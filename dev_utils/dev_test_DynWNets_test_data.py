@@ -10,7 +10,6 @@ Created on Saturday June 26th 2021
 
 
 # %% import packages
-from typing import NamedTuple
 
 import numpy as np
 import torch
