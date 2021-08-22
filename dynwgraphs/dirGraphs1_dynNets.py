@@ -785,6 +785,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def loglike_seq_T(self):
         loglike_T = 0
+        if self.T_train < 10:
+            raise Exception("likelihood from very short time series is unlikely to have much meaning")
         for t in range(self.T_train):
             Y_t, X_t = self.get_train_obs_t(t)
             
@@ -1589,7 +1591,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         if A_T.dtype != torch.bool:
             A_T = A_T >0
 
-        return self.sample_Y_T_from_par_list(self.T_train, self.phi_T, X_T = self.X_T, beta_T=self.beta_T, dist_par_un_T=self.dist_par_un_T, avoid_empty=avoid_empty, A_T=A_T)
+        return self.sample_Y_T_from_par_list(self.T_all, self.phi_T, X_T = self.X_T, beta_T=self.beta_T, dist_par_un_T=self.dist_par_un_T, avoid_empty=avoid_empty, A_T=A_T)
 
     def info_filter(self):
         return self.model_class + super().info_filter()
