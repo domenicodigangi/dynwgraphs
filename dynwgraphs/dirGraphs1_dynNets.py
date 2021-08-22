@@ -995,7 +995,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                             if a[t].shape == v[t].shape:
                                 a[t] = v[t]
                             else: 
-                                raise
+                                raise Exception(f"attribute {k} of wrong shape {a[t].shape}, {v[t].shape}")
                     else:
                         raise
                         
@@ -2015,6 +2015,7 @@ def get_model_from_run_dict(dgp_or_filt, bin_or_w, Y_T, X_T, run_d):
         mod_str = f"{dgp_or_filt}_{bin_or_w}"
         mod_par_dict = {k: run_d[f"{mod_str}_{k}"] for k in mod_in_names}
         ss_or_sd = "ss"
+        n_ext_reg = X_T.shape[2]
     elif dgp_or_filt[:4] == "filt":
         ss_or_sd = dgp_or_filt[5:]
         mod_in_names = ["phi_tv", "beta_tv"]
@@ -2023,13 +2024,14 @@ def get_model_from_run_dict(dgp_or_filt, bin_or_w, Y_T, X_T, run_d):
         mod_in_names = ["size_phi_t", "size_beta_t"]
         mod_str = f"filt_{bin_or_w}"
         mod_par_dict.update({k: run_d[f"{mod_str}_{k}"] for k in mod_in_names})
+        n_ext_reg = int(run_d[f"filt_{bin_or_w}_n_ext_reg"])
     else:
         raise
 
-    out_mod =  get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, X_T=X_T, T_train=T_train, **mod_par_dict)
+    out_mod =  get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, X_T=X_T[:, :, :n_ext_reg, :], T_train=T_train, **mod_par_dict)
     # if w mod init also it's binary submod
     if bin_or_w  == "w":
-        bin_mod = get_model_from_run_dict(dgp_or_filt, "bin", Y_T, X_T, run_d)
+        bin_mod = get_model_from_run_dict(dgp_or_filt, "bin", Y_T, X_T[:, :, :n_ext_reg, :], run_d)
 
         out_mod.bin_mod = bin_mod
 
