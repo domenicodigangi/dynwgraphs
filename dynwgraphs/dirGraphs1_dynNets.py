@@ -607,6 +607,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
 
     def shift_sequence_phi_o_T_beta_const(self, c, x_T):    
+        if self.reg_cross_unique.sum() > 1:
+            raise
+    
         beta_t_all = self.beta_T[0].clone()
         beta_t_all[:, self.reg_cross_unique] = beta_t_all[:,self.reg_cross_unique] + c
         self.beta_T[0] = beta_t_all
@@ -711,7 +714,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             raise Exception("need to check it before using it")
 
     def identify_sequences_tv_par(self):
-        self.identify_sequences(id_phi=self.phi_tv, id_beta=self.beta_tv, id_dist_par=self.dist_par_tv)
+        self.identify_sequences(id_phi=self.phi_tv, id_beta=any(self.beta_tv), id_dist_par=self.dist_par_tv)
 
 
     def check_regressors_seq_shape(self):
@@ -738,8 +741,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 reg_cross_unique[k] = True
             elif np.all(unique_flag_T) > 0.1:
                 raise
-        if reg_cross_unique.sum() > 1:
-            raise
         return reg_cross_unique
 
     def run_checks(self):

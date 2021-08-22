@@ -97,7 +97,7 @@ def get_test_w_seq(avg_weight = 1e5):
 
     
     X_T_multi = X_matrix_T.repeat_interleave(2, dim=2)
-    X_T_multi[:, :, 1, :] = torch.range(0, T-1) * torch.ones(N,N).unsqueeze(dim=2)
+    X_T_multi[:, :, 1, :] = torch.arange(0, T) * torch.ones(N,N).unsqueeze(dim=2)
     return Y_T, X_scalar_T, X_T_multi
 
 
@@ -135,7 +135,7 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
         mod_tmp = dirSpW1_sequence_ss(torch.zeros(N, N, T), size_phi_t=size_phi_t)
         dist_par_un_T_dgp = [torch.ones(1)]    
 
-    phi_dgp_type, phi_0, B_phi, sigma_phi = dgp_set_dict["type_tv_dgp_phi"]
+    phi_dgp_type, phi_0, B_phi, sigma_phi = dgp_set_dict["phi_dgp_set_type_tv"]
 
     # set reference values for dgp
     if phi_0 == "ref_mat":
@@ -159,57 +159,68 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
 
     # dgp for coefficients of ext reg beta
     if dgp_set_dict["n_ext_reg"] > 0:
-        if dgp_set_dict["n_ext_reg"] > 1:
-            raise
-        #sample regressors
-        X_cross_type, X_dgp_type, unc_mean_X, B_X, sigma_X = dgp_set_dict["type_tv_dgp_ext_reg"]
+        reg_list = []
+        beta_list = []
+        for n in range(dgp_set_dict["n_ext_reg"]):
 
-        beta_tv = dgp_set_dict["beta_tv"]
-        size_beta_t = size_from_str(dgp_set_dict["size_beta_t"], N)
+            #sample regressors
+            X_cross_type, X_dgp_type, unc_mean_X, B_X, sigma_X = dgp_set_dict["type_tv_ext_reg_dgp_set"]
 
-        if X_cross_type == "uniform":
-            if len(beta_tv) != 1:
-                raise
-            if X_dgp_type == "AR":
-                x_T = dgpAR(unc_mean_X, B_X, sigma_X, T).unsqueeze(dim=1)
-            X_T = tens(np.tile(x_T, (N, N, 1, 1)))
-        elif X_cross_type == "link_specific":
-            if len(beta_tv) != 1:
-                raise
-            if X_dgp_type == "AR":
-                X_T = torch.zeros(N, N, 1, T)
-                for i in range(N):
-                    for j in range(N):
-                        if i!=j:
-                            X_T[i, j, 0, :] = dgpAR(unc_mean_X, B_X, sigma_X, T).unsqueeze(dim=1)
+            beta_tv = dgp_set_dict["beta_tv"]
+            size_beta_t = size_from_str(dgp_set_dict["size_beta_t"], N)
 
-        # sample reg coeff
-        beta_dgp_type, unc_mean_beta, B_beta, sigma_beta = dgp_set_dict["type_tv_dgp_beta"]
-        if unc_mean_beta is None:
-            unc_mean_beta = 1 + torch.randn(size_beta_t, dgp_set_dict["n_ext_reg"])
-            if unc_mean_beta.shape[0] != size_beta_t:
-                raise
-        elif type(unc_mean_beta) in [float, int]:
-            if size_beta_t > 1:
-                unc_mean_beta = unc_mean_beta +  torch.randn(size_beta_t, dgp_set_dict["n_ext_reg"])
-            else:
-                unc_mean_beta = unc_mean_beta * torch.ones(size_beta_t, dgp_set_dict["n_ext_reg"])
-        else:
-            raise
+            if X_cross_type == "uniform":
+                if X_dgp_type == "AR":
+                    x_T = dgpAR(unc_mean_X, B_X, sigma_X, T).unsqueeze(dim=1)
+                X_T = tens(np.tile(x_T, (N, N, 1, 1)))
+            elif X_cross_type == "link_specific":
+                if X_dgp_type == "AR":
+                    X_T = torch.zeros(N, N, 1, T)
+                    for i in range(N):
+                        for j in range(N):
+                            if i!=j:
+                                X_T[i, j, 0, :] = dgpAR(unc_mean_X, B_X, sigma_X, T).unsqueeze(dim=1)
 
-        if any(beta_tv):
-            if not all(beta_tv):
-                raise
-            if beta_dgp_type == "AR":
-                if size_beta_t == 1:
-                    beta_T_dgp = mod_tmp.par_tens_T_to_list(dgpAR(unc_mean_beta, B_beta, sigma_beta, T).unsqueeze(dim=1))
-                elif size_beta_t >= 1:
-                    beta_T_dgp = sample_par_vec_dgp_ar(mod_tmp, unc_mean_beta, B_beta, sigma_beta, T)
-                    beta_T_dgp = [b.unsqueeze(1) for b in beta_T_dgp]
+            # sample reg coeff
+            beta_dgp_type, unc_mean_beta, B_beta, sigma_beta = dgp_set_dict["beta_dgp_set_type_tv"]
+            if unc_mean_beta is None:
+                unc_mean_beta = 1 + torch.randn(size_beta_t, 1)
+                if unc_mean_beta.shape[0] != size_beta_t:
+                    raise
+            elif type(unc_mean_beta) in [float, int]:
+                if size_beta_t > 1:
+                    unc_mean_beta = unc_mean_beta +  torch.randn(size_beta_t, 1)
+                else:
+                    unc_mean_beta = unc_mean_beta * torch.ones(size_beta_t, 1)
             else:
                 raise
-        else:
-            beta_T_dgp = [unc_mean_beta]
+
+            if beta_tv[n]:
+                if not all(beta_tv):
+                    raise
+                if beta_dgp_type == "AR":
+                    if size_beta_t == 1:
+                        beta_T_dgp = mod_tmp.par_tens_T_to_list(dgpAR(unc_mean_beta, B_beta, sigma_beta, T).unsqueeze(dim=1))
+                    elif size_beta_t >= 1:
+                        beta_T_dgp = sample_par_vec_dgp_ar(mod_tmp, unc_mean_beta, B_beta, sigma_beta, T)
+                        beta_T_dgp = [b.unsqueeze(1) for b in beta_T_dgp]
+                else:
+                    raise
+            else:
+                beta_T_dgp = [unc_mean_beta]
+
+            reg_list.append(X_T)
+            beta_list.append(beta_T_dgp)
+
+        #collpse matrices and betas for different regr 
+        X_T = torch.cat(reg_list, dim=2)
+        beta_T_dgp = []
+        for t, beta_0 in enumerate(beta_list[0]):
+            all_beta_n_at_time_t = [beta_list[n][t] for n in range(len(beta_list))]
+            beta_t_dgp = torch.cat(all_beta_n_at_time_t, dim=1)
+            beta_T_dgp.append(beta_t_dgp)
+
+
     else:
         X_T = None
         size_beta_t = 1
