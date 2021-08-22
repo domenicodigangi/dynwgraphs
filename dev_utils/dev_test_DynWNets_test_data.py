@@ -36,7 +36,7 @@ model.opt_options_ss_t["max_opt_iter"] = 100
 
 
 model.estimate_ss_t(1, est_phi=True, est_beta = True, est_dist_par=False)
-model.get_seq_latent_par()
+model.get_time_series_latent_par()
 
 
 # %% Test sequence of single snapshot estimates of  phi_T
@@ -47,7 +47,7 @@ model.opt_options_ss_seq["opt_n"] = "ADAM"
 model.rescale_SD
 
 model.estimate_ss_seq_joint()
-model.get_seq_latent_par()
+model.get_time_series_latent_par()
 model.identify_sequence()
 
 t=56
@@ -73,7 +73,7 @@ model.opt_options_sd["opt_n"] = "ADAM"
 
 optimizer = model.estimate_sd()
 
-model.get_seq_latent_par()
+model.get_time_series_latent_par()
 
 model.get_unc_mean(model.sd_stat_par_un_phi)
 

@@ -139,6 +139,17 @@ class dirGraphs_funs(nn.Module):
     def exp_Y(self, phi, beta, X_t):
         pass
 
+    def set_elements_from_par_tens_to(self, par_tens, inds, val):
+        if par_tens.dim() == 1:
+                return torch.where(inds, val, par_tens)
+        elif par_tens.dim() == 2:
+            if inds.dim() == 1:
+                return torch.where(inds.unsqueeze(1).repeat_interleave(par_tens.shape[1], dim=1), val, par_tens)
+            else:
+                raise
+        else:
+            raise Exception("Do not know how to handle tensors of parameters with more than 2 dims")
+
     def identify_io_par_to_be_sum(self, par_vec, id_type, inds_to_excl=None):
         """ enforce an identification condition on input and output parameters that are going to enter the pdf always as par_in_i + par_out_j 
         """
@@ -152,7 +163,7 @@ class dirGraphs_funs(nn.Module):
                 else:
                     raise Exception("If using non boolean indexing for inds_to_exclude, need to check that zero element is not being excluded")
 
-            par_vec = torch.where(~inds_to_excl, par_vec, torch.tensor(0.0))
+            par_vec = self.set_elements_from_par_tens_to(par_vec, ~inds_to_excl, torch.tensor(0.0)) 
 
         par_vec_i, par_vec_o = splitVec(par_vec)
 
@@ -172,7 +183,7 @@ class dirGraphs_funs(nn.Module):
         par_vec_out = torch.cat((par_vec_i_out, par_vec_o_out))
         
         if inds_to_excl is not None:
-            par_vec_out = torch.where(~inds_to_excl, par_vec_out, torch.tensor(0.0))
+            par_vec_out = self.set_elements_from_par_tens_to(par_vec, ~inds_to_excl, torch.tensor(0.0)) 
 
         return par_vec_out
         
@@ -271,11 +282,29 @@ class dirGraphs_funs(nn.Module):
 
         return par_list
 
-    def par_list_to_matrix_T(self, ls):
+    def par_list_to_tens_T(self, ls):
         """
         convert a time series list, with one element per each time step, into a tensor. time is always assumed to be the last tens dim 
         """
-        return torch.stack([p.data for p in ls], dim=1)
+
+        if ls[0].dim() in [0, 1]:
+            return torch.stack([p.data for p in ls], dim=1)
+        elif ls[0].dim() == 2:
+            return torch.stack([p.data for p in ls], dim=2)
+        else:
+            raise
+
+
+    def list_to_time_ser(self, ls, T):
+        if ls is not None:
+            if len(ls) > 1:
+                return self.par_list_to_tens_T(ls)[:, :T]
+            else:
+                ten = self.par_list_to_tens_T(ls)[:, :T]
+                ten_T = ten.repeat_interleave(T, dim=ten.dim()-1)
+                return ten_T
+        else:
+            return None
 
     def get_t_or_t0(self, t,  is_tv, par_list_T):
         if par_list_T is None:
@@ -365,7 +394,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.T_all = self.Y_T.shape[2]
         # T_train is the index of the last obs in the training set
         if T_train is not None:
-            self.T_train = T_train
+            self.T_train = int(T_train)
+            if self.T_train == self.T_all:
+                raise Exception("use T_train = None if using whole smaple")
         else:
             self.T_train = self.T_all
 
@@ -525,9 +556,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.start_opt_from_current_par = False
 
+
     def set_elements_from_par_seq_to(self, par_seq, inds,  val):
-        for ind, par_tens in enumerate(par_seq):
-            par_seq[ind] = torch.where(inds, val, par_tens)
+        for t, par_tens in enumerate(par_seq):
+            par_seq[t] = self.set_elements_from_par_tens_to(par_tens, inds, val) 
 
     def set_par_to_exclude_to_zero(self):
         if self.inds_to_exclude_from_id is not None:
@@ -576,21 +608,21 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         Y_T_train =  self.Y_T[:,:, :self.T_train]
         return Y_T_train
     
-    def get_seq_latent_par(self):
-        phi_T_data = self.par_list_to_matrix_T(self.phi_T) 
-        
-        if self.beta_T is not None:
-            beta_T_data = self.par_list_to_matrix_T(self.beta_T)
-            
-        else:
-            beta_T_data = None
 
-        if self.dist_par_un_T is not None:
-            dist_par_un_T_data = self.par_list_to_matrix_T(self.dist_par_un_T)
+    def get_time_series_latent_par(self, only_train=False):
+        if only_train:
+            T = self.T_train
         else:
-            dist_par_un_T_data = None
+            T = self.T_all
+        
+        phi_T_data = self.list_to_time_ser(self.phi_T, T)
+        dist_par_un_T_data = self.list_to_time_ser(self.dist_par_un_T, T)
+        beta_T_data = self.list_to_time_ser(self.beta_T, T)
 
         return phi_T_data, dist_par_un_T_data, beta_T_data
+
+        
+
 
     def any_beta_tv(self):
         if self.beta_tv is not None:
@@ -714,7 +746,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             raise Exception("need to check it before using it")
 
     def identify_sequences_tv_par(self):
-        self.identify_sequences(id_phi=self.phi_tv, id_beta=any(self.beta_tv), id_dist_par=self.dist_par_tv)
+        self.identify_sequences(id_phi=self.phi_tv, id_beta=self.any_beta_tv(), id_dist_par=self.dist_par_tv)
 
 
     def check_regressors_seq_shape(self):
@@ -822,7 +854,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def plot_phi_T(self, x=None, i=None, fig_ax=None):
         if x is None:
             x = np.array(range(self.T_all))
-        phi_T, _, _ = self.get_seq_latent_par()
+        phi_T, _, _ = self.get_time_series_latent_par()
         if phi_T.shape[1] ==1:
             phi_T = phi_T.repeat_interleave(x.shape[0], dim=1)
 
@@ -847,7 +879,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         return fig, ax
     
     def plot_beta_T(self, x=None, fig_ax = None):
-        _, _, beta_T = self.get_seq_latent_par()
+        _, _, beta_T = self.get_time_series_latent_par()
         if x is None:
             x = np.array(range(self.T_all))
         n_beta = beta_T.shape[2]
@@ -1391,7 +1423,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     def load_par(self, load_path):
         super().load_par(load_path)
-        self.roll_sd_filt_train()
+        self.roll_sd_filt(T_last=self.T_all)
 
     def get_forecast(self, t):
         if t<= self.T_train:
@@ -1678,7 +1710,7 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         T_init = 3
         for t in range(T_init):
             self.estimate_ss_t(t, True, True, False)
-        phi_T, dist_par_un_T, beta_T = self.get_seq_latent_par()
+        phi_T, dist_par_un_T, beta_T = self.get_time_series_latent_par()
         if self.phi_tv:
             phi_unc_mean_0 = phi_T[:, :T_init].mean(dim=1) 
             self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
@@ -1875,7 +1907,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
         return self.Y_T >0
 
     def sample_Y_T(self, avoid_empty=True):
-        return self.sample_Y_T_from_par_list(self.T_train, self.phi_T, X_T = self.X_T, beta_T=self.beta_T, dist_par_un_T=self.dist_par_un_T, avoid_empty=avoid_empty)
+        return self.sample_Y_T_from_par_list(self.T_all, self.phi_T, X_T = self.X_T, beta_T=self.beta_T, dist_par_un_T=self.dist_par_un_T, avoid_empty=avoid_empty)
 
     def info_filter(self):
         return self.model_class + super().info_filter()
@@ -1946,7 +1978,7 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         
     def init_static_sd_from_obs(self):
         self.init_phi_T_from_obs()
-        phi_T, dist_par_un_T, beta_T = self.get_seq_latent_par()
+        phi_T, dist_par_un_T, beta_T = self.get_time_series_latent_par()
         if self.phi_tv:
             phi_unc_mean_0 = phi_T.mean(dim=1) 
             self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
@@ -1982,6 +2014,11 @@ def get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, **kwargs):
 
 def get_model_from_run_dict(dgp_or_filt, bin_or_w, Y_T, X_T, run_d):
 
+    if "T_train" in run_d.keys():
+        T_train = int(run_d["T_train"])
+    else:
+        T_train = None
+
     if dgp_or_filt == "dgp":
         mod_in_names = ["size_phi_t", "phi_tv", "beta_tv", "size_beta_t"]
         mod_str = f"{dgp_or_filt}_{bin_or_w}"
@@ -1998,7 +2035,7 @@ def get_model_from_run_dict(dgp_or_filt, bin_or_w, Y_T, X_T, run_d):
     else:
         raise
 
-    out_mod =  get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, X_T=X_T, **mod_par_dict)
+    out_mod =  get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, X_T=X_T, T_train=T_train, **mod_par_dict)
     # if w mod init also it's binary submod
     if bin_or_w  == "w":
         bin_mod = get_model_from_run_dict(dgp_or_filt, "bin", Y_T, X_T, run_d)

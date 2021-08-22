@@ -119,6 +119,7 @@ def sample_par_vec_dgp_ar(model, unc_mean, B, sigma, T, identify=True):
 def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
 
     bin_or_w = dgp_set_dict["bin_or_w"]
+    T_train = dgp_set_dict["T_train"]
     size_phi_t = size_from_str(dgp_set_dict["size_phi_t"], N)
     if Y_reference is None:
         Y_T_test, _, _ =  get_test_w_seq(avg_weight=1e3)
@@ -135,7 +136,7 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
         mod_tmp = dirSpW1_sequence_ss(torch.zeros(N, N, T), size_phi_t=size_phi_t)
         dist_par_un_T_dgp = [torch.ones(1)]    
 
-    phi_dgp_type, phi_0, B_phi, sigma_phi = dgp_set_dict["phi_dgp_set_type_tv"]
+    phi_dgp_type, phi_0, B_phi, sigma_phi = dgp_set_dict["phi_set_dgp_type_tv"]
 
     # set reference values for dgp
     if phi_0 == "ref_mat":
@@ -164,7 +165,7 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
         for n in range(dgp_set_dict["n_ext_reg"]):
 
             #sample regressors
-            X_cross_type, X_dgp_type, unc_mean_X, B_X, sigma_X = dgp_set_dict["type_tv_ext_reg_dgp_set"]
+            X_cross_type, X_dgp_type, unc_mean_X, B_X, sigma_X = dgp_set_dict["ext_reg_dgp_set_type_tv"]
 
             beta_tv = dgp_set_dict["beta_tv"]
             size_beta_t = size_from_str(dgp_set_dict["size_beta_t"], N)
@@ -182,7 +183,7 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
                                 X_T[i, j, 0, :] = dgpAR(unc_mean_X, B_X, sigma_X, T).unsqueeze(dim=1)
 
             # sample reg coeff
-            beta_dgp_type, unc_mean_beta, B_beta, sigma_beta = dgp_set_dict["beta_dgp_set_type_tv"]
+            beta_dgp_type, unc_mean_beta, B_beta, sigma_beta = dgp_set_dict["beta_set_dgp_type_tv"]
             if unc_mean_beta is None:
                 unc_mean_beta = 1 + torch.randn(size_beta_t, 1)
                 if unc_mean_beta.shape[0] != size_beta_t:
@@ -229,11 +230,11 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
 
 
     if bin_or_w == "bin":    
-        mod_dgp = dirBin1_sequence_ss(torch.zeros(N, N, T), X_T=X_T, size_phi_t=size_phi_t, phi_tv=phi_tv, beta_tv=beta_tv, size_beta_t=size_beta_t) 
+        mod_dgp = dirBin1_sequence_ss(torch.zeros(N, N, T), X_T=X_T, size_phi_t=size_phi_t, phi_tv=phi_tv, beta_tv=beta_tv, size_beta_t=size_beta_t, T_train=T_train) 
     
     elif bin_or_w == "w":    
 
-        mod_dgp = dirSpW1_sequence_ss(torch.zeros(N, N, T), X_T=X_T, size_phi_t=size_phi_t, phi_tv=phi_tv, beta_tv=beta_tv, size_beta_t=size_beta_t) 
+        mod_dgp = dirSpW1_sequence_ss(torch.zeros(N, N, T), X_T=X_T, size_phi_t=size_phi_t, phi_tv=phi_tv, beta_tv=beta_tv, size_beta_t=size_beta_t, T_train=T_train) 
 
     mod_dgp.inds_to_exclude_from_id
     mod_dgp.phi_T = phi_T_dgp

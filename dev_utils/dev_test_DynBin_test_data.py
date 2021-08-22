@@ -42,7 +42,7 @@ model.check_exp_vals(t)
 model.estimate_ss_t(t, est_phi=True, est_beta = True, est_dist_par=False)
 
 model.check_exp_vals(t)
-model.get_seq_latent_par()
+model.get_time_series_latent_par()
 
 
 # %% Test sequence of single snapshot estimates of  phi_T
@@ -52,7 +52,7 @@ model.opt_options_ss_seq["opt_n"] = "LBFGS"
 
 
 model.estimate_ss_seq_joint()
-model.get_seq_latent_par()
+model.get_time_series_latent_par()
 model.identify_sequence()
 
 t=56
@@ -89,7 +89,7 @@ model.sd_stat_par_un_beta["w"].requires_grad
 model.par_l_to_opt[0]
 
 
-model.get_seq_latent_par()
+model.get_time_series_latent_par()
 
 model.get_phi_T()
 
