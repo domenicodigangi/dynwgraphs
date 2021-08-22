@@ -1012,10 +1012,20 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def sample_Y_T(self):
         pass
 
-
     def sample_and_set_Y_T(self, **kwargs):
         self.Y_T = self.sample_Y_T(**kwargs)
         self.set_inds_to_exclude_from_id()
+
+    def get_avg_beta_dict(self):
+        if self.beta_T is not None:
+            _,  _, beta_T = self.get_time_series_latent_par()
+            avg_beta_dict = {} 
+            avg_beta_vec = beta_T.mean(dim=(0, 2)).detach().numpy()
+            for n in range(avg_beta_vec.shape[0]):
+                avg_beta_dict[f"avg_beta_{n+1}"] = avg_beta_vec[n]
+        else:
+            avg_beta_dict = {"avg_beta_1": float('nan')}
+        return avg_beta_dict
 
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
