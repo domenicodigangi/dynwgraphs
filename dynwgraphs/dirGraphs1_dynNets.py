@@ -163,7 +163,7 @@ class dirGraphs_funs(nn.Module):
                 else:
                     raise Exception("If using non boolean indexing for inds_to_exclude, need to check that zero element is not being excluded")
 
-            par_vec = self.set_elements_from_par_tens_to(par_vec, ~inds_to_excl, torch.tensor(0.0)) 
+            par_vec = self.set_elements_from_par_tens_to(par_vec, inds_to_excl, torch.tensor(0.0)) 
 
         par_vec_i, par_vec_o = splitVec(par_vec)
 
@@ -176,17 +176,16 @@ class dirGraphs_funs(nn.Module):
         elif id_type == "in_sum_zero":
             """set sum of in parameters to zero """
             d = par_vec_i.mean()
-       
+
         par_vec_i_out = par_vec_i - d
         par_vec_o_out = par_vec_o + d
-        
+
         par_vec_out = torch.cat((par_vec_i_out, par_vec_o_out))
         
         if inds_to_excl is not None:
-            par_vec_out = self.set_elements_from_par_tens_to(par_vec, ~inds_to_excl, torch.tensor(0.0)) 
+            par_vec_out = self.set_elements_from_par_tens_to(par_vec, inds_to_excl, torch.tensor(0.0)) 
 
         return par_vec_out
-        
 
     def identify_phi_io_and_const_unif_beta(self, phi, beta, x):
         """ enforce an identification condition on the phi and beta parameters for a single snapshot, needed in case of uniform beta
