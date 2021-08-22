@@ -443,6 +443,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.inds_to_exclude_from_id = None
 
 
+    def get_inds_inactive_nodes(self):
+        return strIO_from_tens_T(self.Y_T) /self.Y_T.shape[2] < 0.05 
 
     def check_types(self):
         if self.beta_tv is not None:
@@ -468,7 +470,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             else:
                 raise TypeError()
         
-
     def size_from_str(self, pox_str):
         return size_from_str(pox_str, self.N)
 
@@ -487,7 +488,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         else:
             raise Exception("Wrong type for beta_tv")
             
-
     def tv_flag_bool_from_input(self, tv_flag):
         if type(tv_flag) == str:
             return bool(eval(tv_flag))
@@ -499,7 +499,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             return False
         else:
             raise TypeError()
-
 
     def get_model_symmetry(self):
         self.check_size_phi()
@@ -555,7 +554,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.start_opt_from_current_par = False
 
-
     def set_elements_from_par_seq_to(self, par_seq, inds,  val):
         for t, par_tens in enumerate(par_seq):
             par_seq[t] = self.set_elements_from_par_tens_to(par_tens, inds, val) 
@@ -607,7 +605,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         Y_T_train =  self.Y_T[:,:, :self.T_train]
         return Y_T_train
     
-
     def get_time_series_latent_par(self, only_train=False):
         if only_train:
             T = self.T_train
@@ -619,9 +616,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         beta_T_data = self.list_to_time_ser(self.beta_T, T)
 
         return phi_T_data, dist_par_un_T_data, beta_T_data
-
-        
-
 
     def any_beta_tv(self):
         if self.beta_tv is not None:
@@ -635,7 +629,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         
         # do not identify beta for the moment
         self.identif_multi_par = "independent_id"#        
-
 
     def shift_sequence_phi_o_T_beta_const(self, c, x_T):    
         if self.reg_cross_unique.sum() > 1:
@@ -712,7 +705,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 par_t_id_0 = self.identify_par_vec(par_t, self.par_vec_id_type)
                 par_seq[t] = par_t_id_0
                     
-
     def identify_sequences_phi_T_beta_const(self):    
         x_T = self.X_T[0, 0, self.reg_cross_unique, :].squeeze()
         phi_o_T_sum = sum([phi[self.N:].mean() for phi in self.phi_T ])
