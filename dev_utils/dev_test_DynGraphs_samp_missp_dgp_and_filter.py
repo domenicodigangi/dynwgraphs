@@ -28,10 +28,10 @@ from dynwgraphs.utils.dgps import get_test_w_seq, get_dgp_mod_and_par, dgpAR
 dgp_bin_set = {"N" : 50, \
         "T" : 100, \
         "bin_or_w":"bin", \
-        "type_tv_dgp_phi": "const_unif_0.9", \
+        "phi_dgp_set_type_tv": "const_unif_0.9", \
         "n_ext_reg": 0, \
         "size_beta_t": "2N", \
-        "type_tv_dgp_beta": "AR", \
+        "beta_dgp_set_type_tv": "AR", \
         "all_beta_tv": False}
 
 mod_dgp_bin, dgp_par_bin, Y_reference_bin = get_dgp_mod_and_par(**dgp_bin_set)
@@ -44,11 +44,11 @@ mod_dgp_bin.beta_T
 # %%
 dgp_w_set = copy.deepcopy(dgp_bin_set) 
 dgp_w_set["bin_or_w"] = "w"
-dgp_w_set["type_tv_dgp_phi"] = "AR"
+dgp_w_set["phi_dgp_set_type_tv"] = "AR"
 dgp_w_set["n_ext_reg"] = 0
 dgp_w_set["size_beta_t"] = "2N"
 dgp_w_set["all_beta_tv"] = False
-dgp_w_set["type_tv_dgp_beta"] = "AR"
+dgp_w_set["beta_dgp_set_type_tv"] = "AR"
 
 mod_dgp_w, dgp_par_w, Y_reference_w = get_dgp_mod_and_par(**dgp_w_set)
 mod_dgp_w.bin_mod = mod_dgp_bin
