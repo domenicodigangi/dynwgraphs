@@ -139,24 +139,30 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
     phi_dgp_type, phi_0, B_phi, sigma_phi = dgp_set_dict["phi_set_dgp_type_tv"]
 
     # set reference values for dgp
-    if phi_0 == "ref_mat":
-        phi_0 = mod_tmp.start_phi_from_obs(Y_reference)
-    elif phi_dgp_type[:11] == "const_unif_":
-        exp_a = float(phi_dgp_type[11:])
-        phi_0 = torch.randn(size_phi_t) + torch.ones(size_phi_t)*0.5*torch.log(tens(exp_a /(1 - exp_a)))
-    else:
-        raise
-
-    phi_tv = dgp_set_dict["phi_tv"]
-
-    if phi_tv:
-        if phi_dgp_type == "AR":
-            phi_T_dgp = sample_par_vec_dgp_ar(mod_tmp, phi_0, B_phi, sigma_phi, T)
+    if dgp_set_dict["size_phi_t"] == "2N":
+        if phi_0 == "ref_mat":
+            phi_0 = mod_tmp.start_phi_from_obs(Y_reference)
+        elif phi_dgp_type[:11] == "const_unif_":
+            exp_a = float(phi_dgp_type[11:])
+            phi_0 = torch.randn(size_phi_t) + torch.ones(size_phi_t)*0.5*torch.log(tens(exp_a /(1 - exp_a)))
         else:
             raise
+    elif dgp_set_dict["size_phi_t"] in ["0", None, "None"]:
+        phi_0 = None
     else:
-        phi_T_dgp = [phi_0]
+        raise
+    phi_tv = dgp_set_dict["phi_tv"]
 
+    if phi_0 is not None:
+        if phi_tv:
+            if phi_dgp_type == "AR":
+                phi_T_dgp = sample_par_vec_dgp_ar(mod_tmp, phi_0, B_phi, sigma_phi, T)
+            else:
+                raise
+        else:
+            phi_T_dgp = [phi_0]
+    else:
+        phi_T_dgp = None
 
     # dgp for coefficients of ext reg beta
     if dgp_set_dict["n_ext_reg"] > 0:
