@@ -28,6 +28,7 @@ from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_err
 
 from pathlib import Path
 from torch.autograd import grad
+from torch.autograd.functional import hessian
 import torch.nn as nn
 import logging
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class dirGraphs_funs(nn.Module):
         self.size_dist_par_un_t = size_dist_par_un_t
         self.size_beta_t = size_beta_t
         self.like_type = like_type
-        self.ovflw_exp_L_limit = -30
+        self.ovflw_exp_L_limit = -40
         self.ovflw_exp_U_limit = 30
         self.par_vec_id_type = par_vec_id_type
         self.obs_type = "continuous_positive"
@@ -1046,9 +1047,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         pass
 
 
-    # def get_score_T(self):
-    
-    #     s_T = torch.cat([self.score_t(t)["phi"].unsqueeze(1) for t in range(T) ], dim=1).detach()
 
 
 class dirGraphs_SD(dirGraphs_sequence_ss):
@@ -1704,7 +1702,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         A_t = tens(A_t_bool)
         
         score_dict = {}
-        if  dist_par_un_flag |beta_flag:
+        if  dist_par_un_flag | beta_flag:
             
             # compute the score with AD using Autograd
             like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
@@ -1755,6 +1753,42 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
         return score_dict
 
+
+    def hess_t(self, t, phi_flag, dist_par_un_flag, beta_flag):
+
+        """
+        given the observations and the ZA gamma parameters (i.e. the cond mean
+        matrix and the dist_par_un par), return the score of the distribution wrt to, node
+        specific, parameters associated with the weights
+        """
+
+        Y_t, X_t = self.get_obs_t(t)
+
+        phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
+
+        if phi_t is not None:
+            phi_t.requires_grad = phi_flag
+        if dist_par_un_t is not None:
+            dist_par_un_t.requires_grad = dist_par_un_flag
+        if beta_t is not None:
+            beta_t.requires_grad = beta_flag
+
+        hess_dict = {}
+        like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
+
+        if beta_flag:
+            fun = lambda x: self.loglike_t(Y_t, phi_t, beta=x, X_t=X_t, dist_par_un=dist_par_un_t)
+
+            hess_dict["beta"] = hessian(fun, beta_t)[0]
+        if dist_par_un_flag:
+            fun = lambda x: self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=x)
+            hess_dict["dist_par_un"] = hessian(fun, dist_par_un_t)[0]
+        
+        if phi_flag:
+            fun = lambda x: self.loglike_t(Y_t, x, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
+            hess_dict["phi"] = hessian(fun, phi_t)
+        
+        return hess_dict
 
 class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
