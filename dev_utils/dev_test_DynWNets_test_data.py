@@ -12,7 +12,6 @@ Created on Saturday June 26th 2021
 # %% import packages
 
 import numpy as np
-import torch
 import matplotlib.pyplot as plt
 import dynwgraphs
 from dynwgraphs.utils.tensortools import tens, splitVec
