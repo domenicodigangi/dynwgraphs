@@ -1326,19 +1326,8 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         return opt_res
         
     def estimate(self, **kwargs):
-        try:
-            return self.estimate_sd(**kwargs)
-        except:
-            secont_opt_n = "ADAM"
-            second_lr = self.opt_options_sd["lr"]
-            logger.warning(f"An error occurred in opt using {self.opt_options_sd['opt_n']}. Trying with  {secont_opt_n} with lr = {second_lr}")
-            # if error, reset parameters and change opt algo
-            self.init_all_stat_par()
-            self.opt_options_sd["opt_n"] = secont_opt_n
-            self.opt_options_sd["lr"] = second_lr
- 
-            return self.estimate_sd(**kwargs)
-
+        return self.estimate_sd(**kwargs)
+      
     def load_or_est(self, est_flag, l_s_path  ):
         if est_flag:
             logger.info("Estimating")
