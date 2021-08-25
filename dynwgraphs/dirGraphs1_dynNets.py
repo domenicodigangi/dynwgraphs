@@ -41,7 +41,7 @@ class dirGraphs_funs(nn.Module):
     """
 
     #TO DO: move some unused attributes to child class
-    def __init__(self, avoid_ovflw_fun_flag=True, distr="", size_phi_t=None, size_dist_par_un_t=None, size_beta_t=None, like_type=None, par_vec_id_type=None):
+    def __init__(self, avoid_ovflw_fun_flag=False, distr="", size_phi_t=None, size_dist_par_un_t=None, size_beta_t=None, like_type=None, par_vec_id_type=None):
 
         super().__init__()
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
@@ -50,8 +50,8 @@ class dirGraphs_funs(nn.Module):
         self.size_dist_par_un_t = size_dist_par_un_t
         self.size_beta_t = size_beta_t
         self.like_type = like_type
-        self.ovflw_exp_L_limit = -50
-        self.ovflw_exp_U_limit = 40
+        self.ovflw_exp_L_limit = -30
+        self.ovflw_exp_U_limit = 30
         self.par_vec_id_type = par_vec_id_type
         self.obs_type = "continuous_positive"
 
@@ -1041,6 +1041,16 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             avg_beta_dict = {"avg_beta_1": float('nan')}
         return avg_beta_dict
 
+    
+    def score_t(self, t, rescale_flag, phi_flag, dist_par_un_flag, beta_flag):
+        pass
+
+
+    # def get_score_T(self):
+    
+    #     s_T = torch.cat([self.score_t(t)["phi"].unsqueeze(1) for t in range(T) ], dim=1).detach()
+
+
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
         Version With Score Driven parameters.
@@ -1056,7 +1066,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     __A0_beta = torch.ones(1) * 1e-12
 
 
-    def __init__(self, *args, init_sd_type = "unc_mean", rescale_SD = True, opt_options_sd = __opt_options_sd_def, **kwargs ):
+    def __init__(self, *args, init_sd_type = "est_ss_before", rescale_SD = True, opt_options_sd = __opt_options_sd_def, **kwargs ):
 
         
         super().__init__(*args, **kwargs)
@@ -1128,8 +1138,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def re2un_A_par(self, A_re):
         return torch.log(torch.div(A_re, self.max_value_A - A_re))
 
-    def score_t(self, t):
-        pass
 
     def update_dynw_par(self, t_to_be_updated):
         """
@@ -1142,7 +1150,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
       
         phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
 
-        score_dict = self.score_t(t)
+        score_dict = self.score_t(t, self.rescale_SD, self.phi_tv, self.dist_par_tv, self.any_beta_tv())
 
         if self.phi_T is not None:
             if self.phi_tv:    
@@ -1250,14 +1258,13 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.estimate_ss_t(t, self.phi_T is not None, self.dist_par_un_T is not None, False)
 
         phi_T, dist_par_un_T, beta_T = self.get_time_series_latent_par()
-
+        if self.init_sd_type not in ["unc_mean", "est_ss_before", "est_joint"]:
+            raise Exception("unknown initialization")
         if phi_T is not None:
             if self.phi_tv:
                 phi_unc_mean_0 = phi_T[:, :T_init].mean(dim=1)
-                if self.init_sd_type == "unc_mean":
-                    self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
-                elif self.init_sd_type == "est_joint":
-                    print(phi_unc_mean_0)
+                self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
+                if self.init_sd_type == "est_joint":
                     self.sd_stat_par_un_phi["init_val"] = nn.parameter.Parameter(phi_unc_mean_0)
                 elif self.init_sd_type == "est_ss_before":
                     self.sd_stat_par_un_phi["init_val"] = nn.parameter.Parameter(phi_unc_mean_0, requires_grad=False)
@@ -1521,7 +1528,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
 class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
-    def __init__(self, *args, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, **kwargs):
+    def __init__(self, *args, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, avoid_ovflw_fun_flag=True, **kwargs):
         
         super().__init__( *args, distr = distr, like_type=like_type,  size_dist_par_un_t = size_dist_par_un_t, dist_par_tv= dist_par_tv, **kwargs)
 
@@ -1681,16 +1688,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         return self.model_class + super().info_filter()
 
 
-class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
-
-
-    def __init__(self, *args, **kwargs):
-
-        super().__init__(*args, **kwargs)
-        
-        
-
-    def score_t(self, t):
+    def score_t(self, t, rescale_flag, phi_flag, dist_par_un_flag, beta_flag):
 
         """
         given the observations and the ZA gamma parameters (i.e. the cond mean
@@ -1706,26 +1704,26 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         A_t = tens(A_t_bool)
         
         score_dict = {}
-        if  self.any_beta_tv() | self.dist_par_tv:
+        if  dist_par_un_flag |beta_flag:
             
             # compute the score with AD using Autograd
             like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
             # TODO Add the analytical gradient for beta and dist_par_un KEEPin MIND the ovflw limit for dist_par_un  
-            if self.any_beta_tv():
+            if beta_flag:
                 score_dict["beta"] = grad(like_t, beta_t, create_graph=True)[0]
-            if self.dist_par_tv:
+            if dist_par_un_flag:
                 score_dict["dist_par_un"] = grad(like_t, dist_par_un_t, create_graph=True)[0]
-            if self.rescale_SD:
+            if rescale_flag:
                 pass
                 # raise "Rescaling not ready for beta and dist par"
         
-        if self.phi_tv:
+        if phi_flag:
             sigma_mat = self.link_dist_par(dist_par_un_t, self.N)
             log_cond_exp_Y, log_cond_exp_Y_restr, cond_exp_Y = self.exp_of_fit_plus_reg(phi_t, beta=beta_t, X_t=X_t, ret_all=True)
 
             if self.distr == 'gamma':
                 tmp = (Y_t.clone()/cond_exp_Y - A_t)*sigma_mat
-                if self.rescale_SD:
+                if rescale_flag:
                     diag_resc_mat = sigma_mat*A_t
 
             elif self.distr == 'lognormal':
@@ -1733,7 +1731,7 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
                 log_Y_t = torch.zeros(self.N, self.N)
                 log_Y_t[A_t_bool] = Y_t[A_t_bool].log()
                 tmp = (log_Y_t - log_cond_exp_Y_restr*A_t)/sigma2_mat + A_t/2
-                if self.rescale_SD:
+                if rescale_flag:
                     diag_resc_mat = (sigma_mat**2)**A_t
 
             if self.avoid_ovflw_fun_flag:
@@ -1742,13 +1740,13 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
                 # multiply the score by the derivative of the overflow limit function
                 soft_bnd_der_mat = (1 - torch.tanh(2*((log_cond_exp_Y - L)/(L - U)) + 1)**2)
                 tmp = soft_bnd_der_mat * tmp
-                if self.rescale_SD:
+                if rescale_flag:
                     diag_resc_mat = diag_resc_mat * (soft_bnd_der_mat**2)
 
             score_phi = strIO_from_mat(tmp)
 
             #rescale score if required
-            if self.rescale_SD:
+            if rescale_flag:
                 diag_resc = strIO_from_mat(diag_resc_mat)
                 diag_resc[diag_resc==0] = 1
                 score_phi = score_phi/diag_resc.sqrt()
@@ -1757,6 +1755,17 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
         return score_dict
 
+
+class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
+
+
+    def __init__(self, *args, **kwargs):
+
+        super().__init__(*args, **kwargs)
+        
+        
+
+    
   
   
     def out_of_sample_eval(self):
@@ -1780,11 +1789,11 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 class dirBin1_sequence_ss(dirGraphs_sequence_ss):
 
     
-    def __init__(self, Y_T_train, *args, **kwargs):
+    def __init__(self, Y_T_train, *args, avoid_ovflw_fun_flag=False, **kwargs):
 
         Y_T_train = tens(Y_T_train > 0)
 
-        super().__init__( Y_T_train, *args, distr = "bernoulli",   **kwargs)
+        super().__init__( Y_T_train, *args, distr = "bernoulli", **kwargs)
   
         self.obs_type = "bin"
 
@@ -1963,6 +1972,56 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
     def eval_prediction(self, Y_tp1, phi, beta, X_tp1):
         pass
 
+    def score_t(self, t, rescale_flag, phi_flag, dist_par_un_flag, beta_flag):
+        Y_t, X_t = self.get_obs_t(t)
+
+        phi_t, _, beta_t = self.get_par_t(t)
+
+        A_t = Y_t 
+
+        score_dict = {}
+        if  beta_flag:
+            
+            # compute the score with AD using Autograd
+            like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t)
+
+            if self.any_beta_tv():
+                score_dict["beta"] = grad(like_t, beta_t, create_graph=True)[0]
+        
+            if rescale_flag:
+                pass
+                # raise "Rescaling not ready for beta and dist par"
+
+        if phi_flag:
+
+            exp_A = self.exp_A(phi_t, beta=beta_t, X_t=X_t)
+
+            tmp = A_t - exp_A
+
+            if rescale_flag:
+                diag_resc_mat = exp_A * (1 - exp_A)
+
+            if self.avoid_ovflw_fun_flag:
+                log_inv_pi__mat = self.invPiMat(phi_t, beta=beta_t, X_t=X_t, ret_log=True)
+                L = self.ovflw_exp_L_limit
+                U = self.ovflw_exp_U_limit
+                # multiply the score by the derivative of the overflow limit function
+                soft_bnd_der_mat = (1 - torch.tanh(2*((log_inv_pi__mat - L)/(L - U)) + 1)**2)
+                tmp = soft_bnd_der_mat * tmp
+                if rescale_flag:
+                    diag_resc_mat = diag_resc_mat * (soft_bnd_der_mat**2)
+
+            score_phi = strIO_from_mat(tmp)
+     
+            #rescale score if required
+            if rescale_flag:
+                diag_resc = torch.cat((diag_resc_mat.sum(dim=0), diag_resc_mat.sum(dim=1)))
+                diag_resc[diag_resc==0] = 1
+                score_phi = score_phi/diag_resc.sqrt()
+
+            score_dict["phi"] = score_phi
+    
+        return score_dict
 
 class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
@@ -1975,56 +2034,6 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         self.check_mat_is_bin()
 
   
-    def score_t(self, t):
-        Y_t, X_t = self.get_obs_t(t)
-
-        phi_t, _, beta_t = self.get_par_t(t)
-
-        A_t = Y_t 
-
-        score_dict = {}
-        if  self.any_beta_tv() :
-            
-            # compute the score with AD using Autograd
-            like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t)
-
-            if self.any_beta_tv():
-                score_dict["beta"] = grad(like_t, beta_t, create_graph=True)[0]
-        
-            if self.rescale_SD:
-                pass
-                # raise "Rescaling not ready for beta and dist par"
-
-        if self.phi_tv:
-
-            exp_A = self.exp_A(phi_t, beta=beta_t, X_t=X_t)
-
-            tmp = A_t - exp_A
-
-            if self.rescale_SD:
-                diag_resc_mat = exp_A * (1 - exp_A)
-
-            if self.avoid_ovflw_fun_flag:
-                log_inv_pi__mat = self.invPiMat(phi_t, beta=beta_t, X_t=X_t, ret_log=True)
-                L = self.ovflw_exp_L_limit
-                U = self.ovflw_exp_U_limit
-                # multiply the score by the derivative of the overflow limit function
-                soft_bnd_der_mat = (1 - torch.tanh(2*((log_inv_pi__mat - L)/(L - U)) + 1)**2)
-                tmp = soft_bnd_der_mat * tmp
-                if self.rescale_SD:
-                    diag_resc_mat = diag_resc_mat * (soft_bnd_der_mat**2)
-
-            score_phi = strIO_from_mat(tmp)
-     
-            #rescale score if required
-            if self.rescale_SD:
-                diag_resc = torch.cat((diag_resc_mat.sum(dim=0), diag_resc_mat.sum(dim=1)))
-                diag_resc[diag_resc==0] = 1
-                score_phi = score_phi/diag_resc.sqrt()
-
-            score_dict["phi"] = score_phi
-    
-        return score_dict
    
    
     def out_of_sample_eval(self, exclude_never_obs_train=True):
