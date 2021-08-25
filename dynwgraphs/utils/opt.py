@@ -165,6 +165,11 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     opt_metrics = {"actual_n_opt_iter": n_iter, "final_grad_norm": grad_norm, "final_roll_improv": roll_rel_im, "final_loss": loss.item()}
     hparams_dict["max_opt_iter"]= max_opt_iter
 
+
+    assert torch.isfinite(loss), f"loss is {loss}"
+    assert torch.isfinite(torch.tensor(roll_rel_im)), f"roll_rel_im is {roll_rel_im}"
+    assert torch.isfinite(torch.tensor(grad_norm)), f"grad_norm is {grad_norm}"
+
     logger.info(f"opt parameters : {hparams_dict}")
     final_loss = closure()
     logger.info(f"final loss {final_loss.item()}")
