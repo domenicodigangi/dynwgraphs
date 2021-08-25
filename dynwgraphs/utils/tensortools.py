@@ -86,6 +86,8 @@ def soft_l_bound(x, l_limit):
 def size_from_str(pox_str, N):
         if type(pox_str) in [int, float]:
             return int(pox_str)
+        elif pox_str in ["zero", "0"]:
+            return 0
         elif pox_str in ["one", "1"]:
             return 1
         elif pox_str == "N":
