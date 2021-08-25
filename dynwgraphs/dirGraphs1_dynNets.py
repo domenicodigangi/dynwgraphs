@@ -1052,7 +1052,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     __max_value_A = 20
     __B0 = torch.ones(1) * 0.98
-    __A0 = torch.ones(1) * 0.0001
+    __A0 = torch.ones(1) * 0.00001
     __A0_beta = torch.ones(1) * 1e-12
 
 
@@ -1242,8 +1242,45 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if k not in keys_to_exclude:
                 par_list.append(v)
 
+    
     def init_static_sd_from_obs(self):
-       pass
+        logger.info("init static sd parameters")
+        T_init = 3
+        for t in range(T_init):
+            self.estimate_ss_t(t, self.phi_T is not None, self.dist_par_un_T is not None, False)
+
+        phi_T, dist_par_un_T, beta_T = self.get_time_series_latent_par()
+
+        if phi_T is not None:
+            if self.phi_tv:
+                phi_unc_mean_0 = phi_T[:, :T_init].mean(dim=1)
+                if self.init_sd_type == "unc_mean":
+                    self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
+                elif self.init_sd_type == "est_joint":
+                    print(phi_unc_mean_0)
+                    self.sd_stat_par_un_phi["init_val"] = nn.parameter.Parameter(phi_unc_mean_0)
+                elif self.init_sd_type == "est_ss_before":
+                    self.sd_stat_par_un_phi["init_val"] = nn.parameter.Parameter(phi_unc_mean_0, requires_grad=False)
+
+        if dist_par_un_T is not None:
+            if self.dist_par_tv:
+                dist_par_un_unc_mean_0 = dist_par_un_T[:, :T_init].mean(dim=1) 
+                if self.init_sd_type == "unc_mean":
+                    self.set_unc_mean(dist_par_un_unc_mean_0, self.sd_stat_par_un_dist_par_un)
+                elif self.init_sd_type == "est_joint":
+                    self.sd_stat_par_un_dist_par_un["init_val"] = nn.parameter.Parameter(dist_par_un_unc_mean_0)
+                elif self.init_sd_type == "est_ss_before":
+                    self.sd_stat_par_un_dist_par_un["init_val"] = nn.parameter.Parameter(dist_par_un_unc_mean_0, requires_grad=False)
+
+
+                self.set_unc_mean(dist_par_un_unc_mean_0, self.sd_stat_par_un_dist_par_un)
+        
+        self.roll_sd_filt_train()
+
+        # in case I want to have a different starting point for the optim
+        # def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_A=None):
+        #     super().init_all_stat_par(A0_un=0.0000001)
+
 
     def info_filter(self):
         return f"sd_init_{self.init_sd_type}_resc_{self.rescale_SD}_"
@@ -1306,12 +1343,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.init_static_sd_from_obs()
         self.start_opt_from_current_par = True
 
-        if self.init_sd_type == "est_ss_before":
-            # the inititial value of sd tv par is etimated beforehand on a single snapshot
-
-            self.estimate_ss_t(0, True, self.beta_T is not None, self.dist_par_un_T is not None)
        
         self.set_par_dict_to_opt_and_save()
+
 
         def obj_fun():
             self.roll_sd_filt_train()
@@ -1723,29 +1757,7 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
         return score_dict
 
-    def init_static_sd_from_obs(self):
-        T_init = 3
-        for t in range(T_init):
-            self.estimate_ss_t(t, self.phi_T is not None, self.dist_par_un_T is not None, False)
-
-        phi_T, dist_par_un_T, beta_T = self.get_time_series_latent_par()
-
-        if phi_T is not None:
-            if self.phi_tv:
-                phi_unc_mean_0 = phi_T[:, :T_init].mean(dim=1) 
-                self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
-
-        if dist_par_un_T is not None:
-            if self.dist_par_tv:
-                dist_par_un_unc_mean_0 = dist_par_un_T.mean(dim=1) 
-                self.set_unc_mean(dist_par_un_unc_mean_0, self.sd_stat_par_un_dist_par_un)
-        
-        self.roll_sd_filt_train()
-
-        # in case I want to have a different starting point for the optim
-        # def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_A=None):
-        #     super().init_all_stat_par(A0_un=0.0000001)
-
+  
   
     def out_of_sample_eval(self):
  
@@ -1777,6 +1789,17 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
         self.obs_type = "bin"
 
         self.model_class = "dirBin1"
+
+        self.check_mat_is_bin()
+
+    def check_mat_is_bin(self):
+        check_mat_pos = 0 <=  self.Y_T
+        check_mat_bin = self.Y_T <= 1
+        if not check_mat_pos.all().item():
+            raise Exception("matrix non positive")
+        if not check_mat_bin.all().item():
+            raise Exception("matrix non binary")
+
 
     def invPiMat(self, phi, beta, X_t, ret_log=False):
         """
@@ -1948,15 +1971,17 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         Y_T_train = tens(Y_T_train > 0)
 
         super().__init__( Y_T_train, **kwargs) 
+
+        self.check_mat_is_bin()
+
   
     def score_t(self, t):
         Y_t, X_t = self.get_obs_t(t)
 
         phi_t, _, beta_t = self.get_par_t(t)
 
-        A_t_bool = Y_t > 0
-        A_t = tens(A_t_bool)
-        
+        A_t = Y_t 
+
         score_dict = {}
         if  self.any_beta_tv() :
             
@@ -2000,15 +2025,8 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
             score_dict["phi"] = score_phi
     
         return score_dict
-        
-    def init_static_sd_from_obs(self):
-        if self.phi_T is not None:
-            self.init_phi_T_from_obs()
-            phi_T, dist_par_un_T, beta_T = self.get_time_series_latent_par()
-            if self.phi_tv:
-                phi_unc_mean_0 = phi_T.mean(dim=1) 
-                self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
-
+   
+   
     def out_of_sample_eval(self, exclude_never_obs_train=True):
         inds_keep_subset = self.get_train_Y_T().sum(dim=(2)) > 0
 
