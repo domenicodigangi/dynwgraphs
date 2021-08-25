@@ -406,8 +406,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         else:
             self.T_train = self.T_all
 
-        # T_test is the index of the first obs in the test (validation) set
-        self.T_test = self.T_train+1 
+        # t_test_1 is the index of the first obs in the test (validation) set
+        self.t_test_1 = self.T_train+1 
             
         self.N = self.Y_T.shape[0]
 
@@ -1488,7 +1488,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
         return F_A_t
 
-    def get_out_of_sample_obs_and_pred(self, inds_keep_subset = None, only_present=False):
+    def get_out_of_sample_obs_and_pred(self, inds_keep_subset = None, only_present=True):
 
         if inds_keep_subset is None:
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
@@ -1501,7 +1501,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         F_Y_vec_all = np.zeros(0)
         Y_vec_all = np.zeros(0)
 
-        for t in range(self.T_test, self.T_all): 
+        for t in range(self.t_test_1, self.T_all): 
             
             Y_t = self.get_Y_t(t)
             Y_vec_t = Y_t.detach().numpy()
