@@ -1059,6 +1059,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     __opt_options_sd_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
     __max_value_A = 20
+    __max_value_B = 1 - 1e-5
     __B0 = torch.ones(1) * 0.98
     __A0 = torch.ones(1) * 0.00001
     __A0_beta = torch.ones(1) * 1e-12
@@ -1082,12 +1083,17 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
    
         
 
-    def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_A=None):
+    def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_B=None, max_value_A=None):
 
         self.init_all_par_sequences()
 
+        
+        if max_value_B is None:
+            self.max_value_B = self.__max_value_B
+
         if max_value_A is None:
             self.max_value_A = self.__max_value_A
+
         if B0_un is None:
             self.B0_un = self.re2un_B_par( torch.ones(1) * self.__B0)
         else:
@@ -1124,7 +1130,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     
     def un2re_B_par(self, B_un):
         exp_B = torch.exp(B_un)
-        return torch.div(exp_B, (1 + exp_B))
+        return torch.div(exp_B, (1 + exp_B)) * self.max_value_B
 
     def un2re_A_par(self, A_un):
         exp_A = torch.exp(A_un)
@@ -1802,7 +1808,7 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
  
         if not exclude_never_obs_train:
             raise
-        
+
         Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=True)
 
         eval_dict = { "mse":mean_squared_error(Y_vec_all, F_Y_vec_all),
