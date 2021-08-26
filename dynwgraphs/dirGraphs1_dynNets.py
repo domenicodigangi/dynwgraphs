@@ -1148,7 +1148,17 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         return torch.log(torch.div(A_re, self.max_value_A - A_re))
 
 
-    def update_dynw_par(self, t_to_be_updated):
+    def update_sd_one_tv_par(self, par_t, s, sd_stat_par_un):
+        w = sd_stat_par_un["w"]
+        B = self.un2re_B_par(sd_stat_par_un["B"])  
+        A = self.un2re_A_par(sd_stat_par_un["A"])  
+        par_tp1 = w + torch.mul(B, par_t) + torch.mul(A, s)
+
+        return par_tp1
+    
+
+
+    def update_sd_all_tv_par(self, t_to_be_updated):
         """
         score driven update of the parameters related with the weights: phi_i phi_o
         w_i and w_o need to be vectors of size N, B and A can be scalars or Vectors
@@ -1163,37 +1173,16 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         if self.phi_T is not None:
             if self.phi_tv:    
-                s = score_dict["phi"]
-                w = self.sd_stat_par_un_phi["w"]
-                B = self.un2re_B_par(self.sd_stat_par_un_phi["B"])  
-                A = self.un2re_A_par(self.sd_stat_par_un_phi["A"])  
-                phi_tp1 = w + torch.mul(B, phi_t) + torch.mul(A, s)
-
-                self.phi_T[t+1] = phi_tp1
+                self.phi_T[t+1] = self.update_sd_one_tv_par(phi_t, score_dict["phi"], self.sd_stat_par_un_phi)
 
         if self.dist_par_un_T is not None:
             if self.dist_par_tv:            
-
-                s = score_dict["dist_par_un"]
-                w = self.sd_stat_par_un_dist_par_un["w"]  
-                B = self.un2re_B_par(self.sd_stat_par_un_dist_par_un["B"])  
-                A = self.un2re_A_par(self.sd_stat_par_un_dist_par_un["A"])  
-
-                dist_par_un_tp1 = w + torch.mul(B, dist_par_un_t) + torch.mul(A, s)
-
-                self.dist_par_un_T[t+1] = dist_par_un_tp1
+                self.dist_par_un_T[t+1] = self.update_sd_one_tv_par(dist_par_un_t, score_dict["dist_par_un"], self.sd_stat_par_un_dist_par_un)
 
         if self.beta_T is not None:
             if self.any_beta_tv():
+                self.beta_T[t+1] = self.update_sd_one_tv_par(beta_t, score_dict["beta"], self.sd_stat_par_un_beta)
         
-                s = score_dict["beta"] 
-                w = self.sd_stat_par_un_beta["w"]  
-                B = self.un2re_B_par(self.sd_stat_par_un_beta["B"])  
-                A = self.un2re_A_par(self.sd_stat_par_un_beta["A"])  
-                
-                beta_tp1 = w + torch.mul(B, beta_t) + torch.mul(A, s)
-
-                self.beta_T[t+1] = beta_tp1
 
     def plot_sd_par(self):
         fig, ax = plt.subplots(3,1)
@@ -1247,7 +1236,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             raise
 
         for t in range(1, T_last):
-            self.update_dynw_par(t)
+            self.update_sd_all_tv_par(t)
 
         self.identify_sequences_tv_par()
                 
