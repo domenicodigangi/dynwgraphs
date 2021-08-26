@@ -388,7 +388,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     Single snapshot sequence of, binary or weighted, fitness models with external regressors. 
     """
 
-    _opt_options_ss_t_def = {"opt_n" :"ADAMHD", "max_opt_iter" :1000, "lr" :0.01}
+    _opt_options_ss_t_def = {"opt_n" :"ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True}
     _opt_options_ss_seq_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
     # set default init kwargs to be shared between binary and weighted models
@@ -451,6 +451,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.inds_to_exclude_from_id = None
 
 
+  
     def get_inds_inactive_nodes(self):
         return strIO_from_tens_T(self.Y_T) /self.Y_T.shape[2] < 0.05 
 
@@ -818,11 +819,11 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         hparams_dict = {"time_step":t, "est_phi" :est_phi, "est_dist_par" :est_dist_par, "est_beta" :est_beta, "dist": self.distr, "size_par_dist": self.size_dist_par_un_t, "size_beta": self.size_beta_t, "avoid_ovflw_fun_flag":self.avoid_ovflw_fun_flag}
 
 
-        optim_torch(obj_fun, list(par_l_to_opt), max_opt_iter=self.opt_options_ss_t["max_opt_iter"], opt_n=self.opt_options_ss_t["opt_n"], lr=self.opt_options_ss_t["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in=hparams_dict, disable_logging=True)
+        optim_torch(obj_fun, list(par_l_to_opt),**self.opt_options_ss_t, run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in=hparams_dict)
 
     def loglike_seq_T(self):
         loglike_T = 0
-        if self.T_train < 10:
+        if self.T_train < 2:
             raise Exception("likelihood from very short time series is unlikely to have much meaning")
         for t in range(self.T_train):
             Y_t, X_t = self.get_train_obs_t(t)
@@ -942,7 +943,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
       
         run_name = f"SSSeq_"
 
-        opt_out = optim_torch(obj_fun, self.par_l_to_opt, max_opt_iter=self.opt_options_ss_seq["max_opt_iter"], opt_n=self.opt_options_ss_seq["opt_n"], lr=self.opt_options_ss_seq["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
+        opt_out = optim_torch(obj_fun, self.par_l_to_opt, **self.opt_options_ss_seq, run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
 
         self.identify_sequences()
 
@@ -1065,10 +1066,10 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     __A0_beta = torch.ones(1) * 1e-12
 
 
-    def __init__(self, *args, init_sd_type = "est_ss_before", rescale_SD = True, opt_options_sd = __opt_options_sd_def, **kwargs ):
+    def __init__(self, Y_T, init_sd_type = "est_ss_before", rescale_SD = True, opt_options_sd = __opt_options_sd_def, **kwargs ):
 
         
-        super().__init__(*args, **kwargs)
+        super().__init__(Y_T, **kwargs)
         self.opt_options_sd = opt_options_sd
         if "max_opt_iter" in kwargs.keys():
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
@@ -1081,7 +1082,11 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         self.init_all_stat_par()
    
-        
+    def remove_sd_specific_keys(self, dic):
+        dic.pop("init_sd_type", None)
+        dic.pop("rescale_SD", None)
+        dic.pop("opt_options_sd", None)
+        return dic        
 
     def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_B=None, max_value_A=None):
 
@@ -1254,42 +1259,42 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if k not in keys_to_exclude:
                 par_list.append(v)
   
-    def init_static_sd_from_obs(self):
-        logger.info("init static sd parameters")
-        T_init = 3
-        for t in range(T_init):
-            self.estimate_ss_t(t, self.phi_T is not None, self.dist_par_un_T is not None, False)
 
-        phi_T, dist_par_un_T, beta_T = self.get_time_series_latent_par()
+    def init_one_set_sd_par(self, sd_stat_par_un, par_0):
+        if par_0 is not None:
+            self.set_unc_mean(par_0, sd_stat_par_un)
+            if self.init_sd_type == "est_joint":
+                sd_stat_par_un["init_val"] = nn.parameter.Parameter(par_0)
+            elif self.init_sd_type == "est_ss_before":
+                sd_stat_par_un["init_val"] = nn.parameter.Parameter(par_0, requires_grad=False)
+
+
+    def init_static_sd_from_obs(self):
+
+        T_init = 5
+
+        self.mod_stat.T_train = T_init
+
+        logger.info("init static estimate to initialize sd parameters")
+
+        self.mod_stat.estimate_ss_seq_joint(tb_log_flag=False)
+
+        
         if self.init_sd_type not in ["unc_mean", "est_ss_before", "est_joint"]:
             raise Exception("unknown initialization")
-        if phi_T is not None:
+
+        if self.phi_T is not None:
             if self.phi_tv:
-                phi_unc_mean_0 = phi_T[:, :T_init].mean(dim=1)
-                self.set_unc_mean(phi_unc_mean_0, self.sd_stat_par_un_phi)
-                if self.init_sd_type == "est_joint":
-                    self.sd_stat_par_un_phi["init_val"] = nn.parameter.Parameter(phi_unc_mean_0)
-                elif self.init_sd_type == "est_ss_before":
-                    self.sd_stat_par_un_phi["init_val"] = nn.parameter.Parameter(phi_unc_mean_0, requires_grad=False)
-
-        if dist_par_un_T is not None:
-            if self.dist_par_tv:
-                dist_par_un_unc_mean_0 = dist_par_un_T[:, :T_init].mean(dim=1) 
-                if self.init_sd_type == "unc_mean":
-                    self.set_unc_mean(dist_par_un_unc_mean_0, self.sd_stat_par_un_dist_par_un)
-                elif self.init_sd_type == "est_joint":
-                    self.sd_stat_par_un_dist_par_un["init_val"] = nn.parameter.Parameter(dist_par_un_unc_mean_0)
-                elif self.init_sd_type == "est_ss_before":
-                    self.sd_stat_par_un_dist_par_un["init_val"] = nn.parameter.Parameter(dist_par_un_unc_mean_0, requires_grad=False)
-
-
-                self.set_unc_mean(dist_par_un_unc_mean_0, self.sd_stat_par_un_dist_par_un)
+                self.init_one_set_sd_par(self.sd_stat_par_un_phi, self.mod_stat.phi_T[0])
+        if self.dist_par_un_T is not None:
+            if self.dist_par_un_tv:
+                self.init_one_set_sd_par(self.sd_stat_par_un_dist_par_un, self.mod_stat.dist_par_un_T[0])
+        if self.beta_T is not None:
+            if self.beta_tv:
+                self.init_one_set_sd_par(self.sd_stat_par_un_beta, self.mod_stat.beta_T[0])
         
         self.roll_sd_filt_train()
 
-        # in case I want to have a different starting point for the optim
-        # def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_A=None):
-        #     super().init_all_stat_par(A0_un=0.0000001)
 
     def info_filter(self):
         return f"sd_init_{self.init_sd_type}_resc_{self.rescale_SD}_"
@@ -1352,9 +1357,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.init_static_sd_from_obs()
         self.start_opt_from_current_par = True
 
-       
         self.set_par_dict_to_opt_and_save()
-
 
         def obj_fun():
             self.roll_sd_filt_train()
@@ -1363,7 +1366,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         run_name = self.info_filter()
         
-        opt_res = optim_torch(obj_fun, list(self.par_l_to_opt), max_opt_iter=self.opt_options_sd["max_opt_iter"], opt_n=self.opt_options_sd["opt_n"], lr=self.opt_options_sd["lr"], run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
+        opt_res = optim_torch(obj_fun, list(self.par_l_to_opt), **self.opt_options_sd, run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
 
       
         return opt_res
@@ -1530,9 +1533,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
 class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
-    def __init__(self, *args, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, avoid_ovflw_fun_flag=True, **kwargs):
+    def __init__(self, Y_T, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, avoid_ovflw_fun_flag=True, **kwargs):
         
-        super().__init__( *args, distr = distr, like_type=like_type,  size_dist_par_un_t = size_dist_par_un_t, dist_par_tv= dist_par_tv, **kwargs)
+        super().__init__( Y_T, distr = distr, like_type=like_type,  size_dist_par_un_t = size_dist_par_un_t, dist_par_tv= dist_par_tv, **kwargs)
 
         self.model_class = "dirSpW1"
         self.bin_mod = dirBin1_sequence_ss(torch.zeros(10, 10, 20), size_phi_t = "2N" )
@@ -1797,20 +1800,30 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, Y_T, **kwargs):
 
-        super().__init__(*args, **kwargs)
+        super().__init__(Y_T, **kwargs)
 
-        self.mod_stat = self.get_mod_stat()
+        self.mod_stat = self.get_mod_stat(Y_T, **kwargs)
 
+    
 
-    def get_mod_stat(*args, **kwargs):
+    def get_mod_stat(Y_T, **kwargs):
 
+        kwargs = self.set_all_tv_opt_to_false(kwargs)  
         kwargs["phi_tv"] = False
-        kwargs["dist_par_un_tv"] = False
-        kwargs["beta_tv"] = False
+        kwargs["dist_par_tv"] = False
+        beta_stat = copy.deepcopy(self.beta_tv)
+        beta_stat = False
+        kwargs["beta_tv"] = beta_stat
+        kwargs = self.remove_sd_specific_keys(kwargs)
 
-        return dirSpW1_sequence_ss(*args, **kwargs)
+        mod_stat = dirSpW1_sequence_ss(Y_T, **kwargs)
+        mod_stat.opt_options_ss_seq["max_opt_iter"] = 5000
+        mod_stat.opt_options_ss_seq["disable_logging"] = True
+        
+        return mod_stat
+
 
     def out_of_sample_eval(self, exclude_never_obs_train=True):
  
@@ -1835,11 +1848,11 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 # Binary Graphs
 class dirBin1_sequence_ss(dirGraphs_sequence_ss):
     
-    def __init__(self, Y_T_train, *args, avoid_ovflw_fun_flag=False, **kwargs):
+    def __init__(self, Y_T, *args, avoid_ovflw_fun_flag=False, **kwargs):
 
-        Y_T_train = tens(Y_T_train > 0)
+        Y_T = tens(Y_T > 0)
 
-        super().__init__( Y_T_train, *args, distr = "bernoulli", **kwargs)
+        super().__init__( Y_T, *args, distr = "bernoulli", **kwargs)
   
         self.obs_type = "bin"
 
@@ -2071,24 +2084,32 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
 
 class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
-    def __init__(self, Y_T_train, **kwargs): 
+    def __init__(self, Y_T, **kwargs): 
 
-        Y_T_train = tens(Y_T_train > 0)
+        Y_T = tens(Y_T > 0)
 
-        super().__init__( Y_T_train, **kwargs) 
+        super().__init__( Y_T, **kwargs) 
 
         self.check_mat_is_bin()
 
-        self.mod_stat = self.get_mod_stat()
+        self.mod_stat = self.get_mod_stat(Y_T, **kwargs)
 
 
-    def get_mod_stat(*args, **kwargs):
-
+    def get_mod_stat(self, Y_T, **kwargs):
         kwargs["phi_tv"] = False
-        kwargs["dist_par_un_tv"] = False
-        kwargs["beta_tv"] = False
+        kwargs["dist_par_tv"] = False
+        beta_stat = copy.deepcopy(self.beta_tv)
+        beta_stat = False
+        kwargs["beta_tv"] = beta_stat
 
-        return dirBin1_sequence_ss(*args, **kwargs)
+        kwargs = self.remove_sd_specific_keys(kwargs)
+
+        mod_stat = dirBin1_sequence_ss(Y_T, **kwargs)
+
+        mod_stat.opt_options_ss_seq["max_opt_iter"] = 5000
+        mod_stat.opt_options_ss_seq["disable_logging"] = True
+
+        return mod_stat
 
 
   
