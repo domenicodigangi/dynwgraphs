@@ -1059,7 +1059,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     __opt_options_sd_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
     __max_value_A = 20
-    __max_value_B = 1 - 1e-5
+    __max_value_B = 1 - 1e-3
     __B0 = torch.ones(1) * 0.98
     __A0 = torch.ones(1) * 0.00001
     __A0_beta = torch.ones(1) * 1e-12
@@ -1253,8 +1253,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         for k, v in par_dict.items():
             if k not in keys_to_exclude:
                 par_list.append(v)
-
-    
+  
     def init_static_sd_from_obs(self):
         logger.info("init static sd parameters")
         T_init = 3
@@ -1291,7 +1290,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         # in case I want to have a different starting point for the optim
         # def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_A=None):
         #     super().init_all_stat_par(A0_un=0.0000001)
-
 
     def info_filter(self):
         return f"sd_init_{self.init_sd_type}_resc_{self.rescale_SD}_"
@@ -1803,6 +1801,16 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
         super().__init__(*args, **kwargs)
 
+        self.mod_stat = self.get_mod_stat()
+
+
+    def get_mod_stat(*args, **kwargs):
+
+        kwargs["phi_tv"] = False
+        kwargs["dist_par_un_tv"] = False
+        kwargs["beta_tv"] = False
+
+        return dirSpW1_sequence_ss(*args, **kwargs)
 
     def out_of_sample_eval(self, exclude_never_obs_train=True):
  
@@ -2070,6 +2078,18 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         super().__init__( Y_T_train, **kwargs) 
 
         self.check_mat_is_bin()
+
+        self.mod_stat = self.get_mod_stat()
+
+
+    def get_mod_stat(*args, **kwargs):
+
+        kwargs["phi_tv"] = False
+        kwargs["dist_par_un_tv"] = False
+        kwargs["beta_tv"] = False
+
+        return dirBin1_sequence_ss(*args, **kwargs)
+
 
   
    
