@@ -151,7 +151,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
             if (n_iter % log_interval) == 0:
                 logger.info(f" iter {n_iter}, g_norm {'{:.3e}'.format(grad_norm)}, roll rel impr { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
         except:
-            raise Exception(f"Error at iter {n_iter}")
+            raise Exception(f"Error at iter {n_iter}, with parameters {unPar}")
 
     opt_metrics = {"actual_n_opt_iter": n_iter, "final_grad_norm": grad_norm, "final_roll_improv": roll_rel_im, "final_loss": loss.item()}
     hparams_dict["max_opt_iter"]= max_opt_iter
