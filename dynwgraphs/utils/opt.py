@@ -3,16 +3,6 @@
 
 """
 @author: Domenico Di Gangi,  <digangidomenico@gmail.com>
-Created on Sunday June 27th 2021
-
-"""
-
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-"""
-@author: Domenico Di Gangi,  <digangidomenico@gmail.com>
 Created on Wednesday June 16th 2021
 
 """
@@ -127,40 +117,41 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
         if n_iter > min_opt_iter:
             if terminate_flag:
                 break
-        
-        loss = optimizer.step(closure)
+        try:
+            loss = optimizer.step(closure)
 
-        # check the gradient's norm
-        
-        grad_norm = grad_norm_from_list(unPar) 
-        small_grad_flag = grad_norm < small_grad_th
-        # check presence of nans in opt vector
-        nan_flag = np.any([torch.isnan(par).any().item() for par in unPar])
-        # check improvement
-        rel_improv = get_rel_improv(last_loss, loss.item())
+            # check the gradient's norm
+            
+            grad_norm = grad_norm_from_list(unPar) 
+            small_grad_flag = grad_norm < small_grad_th
+            # check presence of nans in opt vector
+            nan_flag = np.any([torch.isnan(par).any().item() for par in unPar])
+            # check improvement
+            rel_improv = get_rel_improv(last_loss, loss.item())
 
-        rel_im = np.append(rel_im, rel_improv)
-        last_loss = loss.item()
-        if n_iter > min_opt_iter:
-            roll_rel_im = rel_im[-bandwidth:].mean()
-            if roll_rel_im < rel_improv_tol:
-                no_improv_count = no_improv_count + 1
+            rel_im = np.append(rel_im, rel_improv)
+            last_loss = loss.item()
+            if n_iter > min_opt_iter:
+                roll_rel_im = rel_im[-bandwidth:].mean()
+                if roll_rel_im < rel_improv_tol:
+                    no_improv_count = no_improv_count + 1
+                else:
+                    no_improv_count = 0
+                if no_improv_count > no_improv_max_count:
+                    no_improv_flag = True
             else:
-                no_improv_count = 0
-            if no_improv_count > no_improv_max_count:
-                no_improv_flag = True
-        else:
-            roll_rel_im = rel_im.mean()
+                roll_rel_im = rel_im.mean()
 
-        
-        if tb_log_flag:
-            writer.add_scalar('Loss/value', loss.item(), n_iter)
-            writer.add_scalar('Loss/roll_avg_rel_improv', roll_rel_im, n_iter)
-            writer.add_scalar('Loss/grad_norm', grad_norm, n_iter)
+            
+            if tb_log_flag:
+                writer.add_scalar('Loss/value', loss.item(), n_iter)
+                writer.add_scalar('Loss/roll_avg_rel_improv', roll_rel_im, n_iter)
+                writer.add_scalar('Loss/grad_norm', grad_norm, n_iter)
 
-        if (n_iter % log_interval) == 0:
-            logger.info(f" iter {n_iter}, g_norm {'{:.3e}'.format(grad_norm)}, roll rel impr { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
-
+            if (n_iter % log_interval) == 0:
+                logger.info(f" iter {n_iter}, g_norm {'{:.3e}'.format(grad_norm)}, roll rel impr { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
+        except:
+            raise Exception(f"Error at iter {n_iter}")
 
     opt_metrics = {"actual_n_opt_iter": n_iter, "final_grad_norm": grad_norm, "final_roll_improv": roll_rel_im, "final_loss": loss.item()}
     hparams_dict["max_opt_iter"]= max_opt_iter
