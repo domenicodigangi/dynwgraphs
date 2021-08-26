@@ -1493,7 +1493,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
         return F_A_t
 
-    def get_out_of_sample_obs_and_pred(self, inds_keep_subset = None, only_present=True):
+    def get_out_of_sample_obs_and_pred(self, only_present, inds_keep_subset = None):
 
         if inds_keep_subset is None:
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
@@ -1796,14 +1796,13 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
-        
-        
 
-    
-  
-  
-    def out_of_sample_eval(self):
+
+    def out_of_sample_eval(self, exclude_never_obs_train=True):
  
+        if not exclude_never_obs_train:
+            raise
+        
         Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=True)
 
         eval_dict = { "mse":mean_squared_error(Y_vec_all, F_Y_vec_all),
@@ -1814,14 +1813,13 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         
         return eval_dict
 
+
     def info_filter(self):
         return self.model_class + super().info_filter()
 
+
 # Binary Graphs
-
-
 class dirBin1_sequence_ss(dirGraphs_sequence_ss):
-
     
     def __init__(self, Y_T_train, *args, avoid_ovflw_fun_flag=False, **kwargs):
 
@@ -2071,9 +2069,12 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
    
    
     def out_of_sample_eval(self, exclude_never_obs_train=True):
-        inds_keep_subset = self.get_train_Y_T().sum(dim=(2)) > 0
+        if exclude_never_obs_train:
+            inds_keep_subset = self.get_train_Y_T().sum(dim=(2)) > 0
+        else:
+            inds_keep_subset = None
 
-        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(inds_keep_subset=inds_keep_subset)
+        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=False, inds_keep_subset=inds_keep_subset)
         logger.info(f"out of sample eval on {Y_vec_all.size} observations")
         auc_score = roc_auc_score(Y_vec_all, F_Y_vec_all)
         return {"auc_score":auc_score}
@@ -2095,43 +2096,6 @@ def get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, **kwargs):
         return dirSpW1_SD(Y_T, **kwargs)
     else:
         raise
-
-
-
-
-def get_model_from_run_dict(dgp_or_filt, bin_or_w, Y_T, X_T, run_d):
-
-    if "T_train" in run_d.keys():
-        T_train = int(run_d["T_train"])
-    else:
-        T_train = None
-
-    if dgp_or_filt == "dgp":
-        mod_in_names = ["size_phi_t", "phi_tv", "beta_tv", "size_beta_t"]
-        mod_str = f"{dgp_or_filt}_{bin_or_w}"
-        mod_par_dict = {k: run_d[f"{mod_str}_{k}"] for k in mod_in_names}
-        ss_or_sd = "ss"
-        n_ext_reg = X_T.shape[2]
-    elif dgp_or_filt[:4] == "filt":
-        ss_or_sd = dgp_or_filt[5:]
-        mod_in_names = ["phi_tv", "beta_tv"]
-        mod_str = f"filt_{bin_or_w}_{ss_or_sd}"
-        mod_par_dict = {k: run_d[f"{mod_str}_{k}"] for k in mod_in_names}
-        mod_in_names = ["size_phi_t", "size_beta_t"]
-        mod_str = f"filt_{bin_or_w}"
-        mod_par_dict.update({k: run_d[f"{mod_str}_{k}"] for k in mod_in_names})
-        n_ext_reg = int(run_d[f"filt_{bin_or_w}_n_ext_reg"])
-    else:
-        raise
-
-    out_mod =  get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, X_T=X_T[:, :, :n_ext_reg, :], T_train=T_train, **mod_par_dict)
-    # if w mod init also it's binary submod
-    if bin_or_w  == "w":
-        bin_mod = get_model_from_run_dict(dgp_or_filt, "bin", Y_T, X_T[:, :, :n_ext_reg, :], run_d)
-
-        out_mod.bin_mod = bin_mod
-
-    return out_mod
 
 
 
