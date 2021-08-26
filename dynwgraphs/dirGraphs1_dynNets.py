@@ -1137,7 +1137,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         return torch.div(exp_A, (1 + exp_A)) * self.max_value_A
 
     def re2un_B_par(self, B_re):
-        return torch.log(torch.div(B_re, 1 - B_re))
+        return torch.log(torch.div(B_re, self.max_value_B - B_re))
 
     def re2un_A_par(self, A_re):
         return torch.log(torch.div(A_re, self.max_value_A - A_re))
