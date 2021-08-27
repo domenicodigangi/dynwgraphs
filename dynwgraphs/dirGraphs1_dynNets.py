@@ -485,12 +485,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         if type(beta_tv) == str:
             if ("[" in beta_tv) and ("]" in beta_tv):
                 return eval(beta_tv)
-            elif beta_tv in ["True", "False"]:
-                return self.tv_flag_list_from_input(eval(beta_tv))
             else:
-                raise Exception("String must encode a list")
+                return self.tv_flag_list_from_input(eval(beta_tv))
         elif type(beta_tv) == bool:
             return tens([beta_tv for p in range(self.n_reg)] ).bool()
+        elif type(beta_tv) in [int, float]:
+            return  self.tv_flag_list_from_input(bool(beta_tv))
         elif type(beta_tv) in [list, torch.Tensor]:
             return tens(beta_tv).bool()
         else:
@@ -1313,7 +1313,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if self.dist_par_tv:
                 self.init_one_set_sd_par(self.sd_stat_par_un_dist_par_un, self.mod_stat.dist_par_un_T[0])
         if self.beta_T is not None:
-            if self.any_beta_tv:
+            if self.any_beta_tv():
                 self.init_one_set_sd_par(self.sd_stat_par_un_beta, self.mod_stat.beta_T[0])
         
         self.roll_sd_filt_train()
