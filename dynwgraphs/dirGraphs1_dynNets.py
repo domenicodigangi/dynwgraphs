@@ -1255,7 +1255,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if self.init_sd_type == "est_joint":
                 sd_stat_par_un["init_val"] = nn.parameter.Parameter(par_0)
             elif self.init_sd_type == "est_ss_before":
-                sd_stat_par_un["init_val"] = nn.parameter.Parameter(par_0, requires_grad=False)
+                sd_stat_par_un["init_val"] = nn.parameter.Parameter(par_0)
 
 
     def init_static_sd_from_obs(self):
@@ -1276,10 +1276,10 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if self.phi_tv:
                 self.init_one_set_sd_par(self.sd_stat_par_un_phi, self.mod_stat.phi_T[0])
         if self.dist_par_un_T is not None:
-            if self.dist_par_un_tv:
+            if self.dist_par_tv:
                 self.init_one_set_sd_par(self.sd_stat_par_un_dist_par_un, self.mod_stat.dist_par_un_T[0])
         if self.beta_T is not None:
-            if self.beta_tv:
+            if self.any_beta_tv():
                 self.init_one_set_sd_par(self.sd_stat_par_un_beta, self.mod_stat.beta_T[0])
         
         self.roll_sd_filt_train()
@@ -1797,9 +1797,8 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
     
 
-    def get_mod_stat(Y_T, **kwargs):
+    def get_mod_stat(self, Y_T, **kwargs):
 
-        kwargs = self.set_all_tv_opt_to_false(kwargs)  
         kwargs["phi_tv"] = False
         kwargs["dist_par_tv"] = False
         beta_stat = copy.deepcopy(self.beta_tv)
