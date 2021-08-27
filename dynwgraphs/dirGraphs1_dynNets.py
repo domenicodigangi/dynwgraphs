@@ -392,8 +392,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     _opt_options_ss_seq_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
     # set default init kwargs to be shared between binary and weighted models
-    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  par_vec_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
-            opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None, opt_n=None):
+    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  par_vec_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, clamp_score={"min": -100, "max": 100}}, data_name="", opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None, opt_n=None):
 
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
         
@@ -443,7 +442,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.opt_options = self.opt_options_ss_seq
         
         self.data_name = data_name
-        
+        self.clamp_score = clamp_score
         self.model_symmetry = self.get_model_symmetry()
         self.init_all_par_sequences()
 
@@ -1047,7 +1046,37 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def score_t(self, t, rescale_flag, phi_flag, dist_par_un_flag, beta_flag):
         pass
 
+    def get_score_T(self, T, list_par=None, rescaled = False):
+        if list_par is None:
+            list_par =[]
+            if self.phi_T is not None:
+                list_par.append("phi")
+            if self.dist_par_un_T is not None:
+                list_par.append("dist_par_un")
+            if self.beta_T is not None:
+                list_par.append("beta")
+        
+        phi_flag = "phi" in list_par
+        dist_par_un_flag = "dist_par_un" in list_par
+        beta_flag = "beta" in list_par
 
+        if self.beta_T is None:
+            if beta_flag:
+                raise Exception("Beta not present")
+
+        score_T = {k: [] for k in list_par}
+
+        for t in range(T):
+            d = self.score_t(t, rescaled, phi_flag, dist_par_un_flag, beta_flag)
+            for k, l in score_T.items():
+                l.append(d[k].unsqueeze(1))
+
+        for k, l in score_T.items():
+            score_T[k] = torch.cat(l, dim=1)
+        return score_T
+
+    def get_score_T_train(self, list_par=None, rescaled = False):
+        return self.get_score_T(self.T_train, list_par=list_par, rescaled=rescaled )
 
 
 class dirGraphs_SD(dirGraphs_sequence_ss):
@@ -1062,7 +1091,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     __max_value_A = 20
     __max_value_B = 1 - 1e-3
     __B0 = torch.ones(1) * 0.98
-    __A0 = torch.ones(1) * 0.00001
+    __A0 = torch.ones(1) * 0.0001
     __A0_beta = torch.ones(1) * 1e-12
 
 
@@ -1149,6 +1178,8 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
 
     def update_sd_one_tv_par(self, par_t, s, sd_stat_par_un):
+        if self.clamp_score is not None:
+            s = torch.clamp(s, **self.clamp_score)
         w = sd_stat_par_un["w"]
         B = self.un2re_B_par(sd_stat_par_un["B"])  
         A = self.un2re_A_par(sd_stat_par_un["A"])  
@@ -1243,6 +1274,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def roll_sd_filt_train(self):
         self.roll_sd_filt(self.T_train)
 
+    def roll_sd_filt_all(self):
+        self.roll_sd_filt(self.T_all)
+
     def append_all_par_dict_to_list(self, par_dict, par_list, keys_to_exclude=[]):
         for k, v in par_dict.items():
             if k not in keys_to_exclude:
@@ -1279,7 +1313,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if self.dist_par_tv:
                 self.init_one_set_sd_par(self.sd_stat_par_un_dist_par_un, self.mod_stat.dist_par_un_T[0])
         if self.beta_T is not None:
-            if self.any_beta_tv():
+            if self.any_beta_tv:
                 self.init_one_set_sd_par(self.sd_stat_par_un_beta, self.mod_stat.beta_T[0])
         
         self.roll_sd_filt_train()
@@ -1475,7 +1509,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     def load_par(self, load_path):
         super().load_par(load_path)
-        self.roll_sd_filt(T_last=self.T_all)
+        self.roll_sd_filt_train()
 
     def get_forecast(self, t):
         if t<= self.T_train:
