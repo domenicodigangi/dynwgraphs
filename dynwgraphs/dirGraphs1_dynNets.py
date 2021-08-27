@@ -1088,8 +1088,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     __opt_options_sd_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
-    __max_value_A = 20
+    __max_value_A = 10
     __max_value_B = 1 - 1e-3
+    __min_val_dist_par = 1e-5
     __B0 = torch.ones(1) * 0.98
     __A0 = torch.ones(1) * 0.0001
     __A0_beta = torch.ones(1) * 1e-12
@@ -1121,6 +1122,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         self.init_all_par_sequences()
 
+        self.min_val_dist_par = self.__min_val_dist_par
         
         if max_value_B is None:
             self.max_value_B = self.__max_value_B
@@ -1673,11 +1675,11 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
         if (self.distr == 'gamma') | (self.distr == 'lognormal'):
             if dist_par_un.shape[0] == 1:
-                dist_par_re = torch.exp(dist_par_un)
+                dist_par_re = torch.exp(dist_par_un) + self.min_val_dist_par 
             elif dist_par_un.shape[0] == N:
-                dist_par_re = torch.exp(dist_par_un + dist_par_un.unsqueeze(1))
+                dist_par_re = torch.exp(dist_par_un + dist_par_un.unsqueeze(1)) + self.min_val_dist_par
                 if A_t is not None:
-                    dist_par_re = dist_par_re[A_t]
+                    dist_par_re = dist_par_re[A_t] + self.min_val_dist_par
 
         limit_dist_par_re = True
         if limit_dist_par_re:
