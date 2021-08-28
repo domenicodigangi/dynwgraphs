@@ -51,8 +51,8 @@ class dirGraphs_funs(nn.Module):
         self.size_dist_par_un_t = size_dist_par_un_t
         self.size_beta_t = size_beta_t
         self.like_type = like_type
-        self.ovflw_exp_L_limit = -40
-        self.ovflw_exp_U_limit = 30
+        self.ovflw_exp_L_limit = -20
+        self.ovflw_exp_U_limit = 20
         self.par_vec_id_type = par_vec_id_type
         self.obs_type = "continuous_positive"
 
@@ -128,8 +128,8 @@ class dirGraphs_funs(nn.Module):
 
         if self.avoid_ovflw_fun_flag:
             """if required force the exponent to stay within overflow-safe bounds"""
-            log_Econd_mat_restr = \
-                soft_lu_bound(log_Econd_mat, l_limit=self.ovflw_exp_L_limit, u_limit=self.ovflw_exp_U_limit)
+            # log_Econd_mat_restr = torch.clamp(log_Econd_mat, self.ovflw_exp_L_limit, self.ovflw_exp_U_limit)
+            log_Econd_mat_restr = soft_lu_bound(log_Econd_mat, l_limit=self.ovflw_exp_L_limit, u_limit=self.ovflw_exp_U_limit)
         else:
             log_Econd_mat_restr = log_Econd_mat
 
@@ -388,11 +388,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     Single snapshot sequence of, binary or weighted, fitness models with external regressors. 
     """
 
-    _opt_options_ss_t_def = {"opt_n" :"ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True}
-    _opt_options_ss_seq_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
-
     # set default init kwargs to be shared between binary and weighted models
-    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  par_vec_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, clamp_score={"min": -100, "max": 100}, data_name="", opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None, opt_n=None):
+    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  par_vec_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, clamp_score={"min": -100, "max": 100}, data_name="", max_opt_iter = None, opt_n=None):
 
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
         
@@ -432,9 +429,11 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.reg_cross_unique = self.check_regressors_cross_uniqueness()
         self.identif_multi_par = ""
         self.check_id_required()
+    
         
-        self.opt_options_ss_t = opt_options_ss_t
-        self.opt_options_ss_seq = opt_options_ss_seq
+        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True}
+
+        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
         if max_opt_iter is not None:
             self.opt_options_ss_seq["max_opt_iter"] = max_opt_iter
         if opt_n is not None:
@@ -929,9 +928,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.run_checks()
 
-        if not self.start_opt_from_current_par:
-            if self.phi_T is not None:
-                self.init_phi_T_from_obs()
+        # if not self.start_opt_from_current_par:
+        #     if self.phi_T is not None:
+        #         self.init_phi_T_from_obs()
 
         self.set_par_dict_to_opt_and_save()
 
@@ -1086,7 +1085,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         init_sd_type : "unc_mean", "est_joint", "est_ss_before"
     """
 
-    __opt_options_sd_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
 
     __max_value_A = 10
     __max_value_B = 1 - 1e-3
@@ -1095,11 +1093,11 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     __A0_beta = torch.ones(1) * 1e-12
 
 
-    def __init__(self, Y_T, init_sd_type = "est_ss_before", rescale_SD = True, opt_options_sd = __opt_options_sd_def, **kwargs ):
+    def __init__(self, Y_T, init_sd_type = "est_ss_before", rescale_SD = True, **kwargs ):
 
         
         super().__init__(Y_T, **kwargs)
-        self.opt_options_sd = opt_options_sd
+        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01}
         if "max_opt_iter" in kwargs.keys():
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
         if "opt_n" in kwargs.keys():
@@ -1572,7 +1570,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
 
     def set_inds_to_exclude_from_id(self):
-        self.inds_to_exclude_from_id = strIO_from_tens_T(self.Y_T) == 0
+        self.inds_to_exclude_from_id = strIO_from_tens_T(self.Y_T[:, :, :self.T_train]) == 0
         if all(self.inds_to_exclude_from_id):
             logger.warning("All parameters would be ignored. Assuming that this is a test model and setting inds_to_exclude_from_id = None")
             self.inds_to_exclude_from_id = None
@@ -1616,9 +1614,12 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         dist_par_re = self.link_dist_par(dist_par_un, N, A_t=A_t)
         if self.distr == 'gamma':
             EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
+
            #we already took into account the dimension of dist_par above when restricting it
-            rate = torch.div(dist_par_re, EYcond_mat[A_t])
-            distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
+            concentration = dist_par_re  
+            rate = torch.div(concentration, EYcond_mat[A_t])
+            # logger.info((concentration.item(), EYcond_mat[A_t].min().item(), EYcond_mat[A_t].max().item(), rate.min().item(), rate.max().item()))          
+            distr_obj = torch.distributions.gamma.Gamma(concentration, rate)
 
         elif self.distr == 'lognormal':
             log_EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t, ret_log=True)
@@ -1638,13 +1639,13 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         #disregard self loops if present
         Y_t = putZeroDiag(Y_t)
         A_t = Y_t > 0
-        N = A_t.shape[0]
-      
-       
+             
         distr_obj = self.dist_from_pars(phi, beta, X_t, dist_par_un, A_t=A_t)
+       
         log_probs = distr_obj.log_prob(Y_t[A_t])
-        out = torch.sum(log_probs)        # softly bound loglikelihood from below??
-
+        out = torch.sum(log_probs) 
+        
+        # softly bound loglikelihood from below??
         #out = soft_l_bound(out, -1e20)
         return out
 
@@ -1656,15 +1657,16 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
         if (self.distr == 'gamma') | (self.distr == 'lognormal'):
             if dist_par_un.shape[0] == 1:
-                dist_par_re = torch.exp(dist_par_un) + self.min_val_dist_par 
+                pass
             elif dist_par_un.shape[0] == N:
-                dist_par_re = torch.exp(dist_par_un + dist_par_un.unsqueeze(1)) + self.min_val_dist_par
+                dist_par_un = dist_par_un + dist_par_un.unsqueeze(1)
                 if A_t is not None:
-                    dist_par_re = dist_par_re[A_t] + self.min_val_dist_par
+                    dist_par_un = dist_par_un[A_t]
 
-        limit_dist_par_re = True
-        if limit_dist_par_re:
-            dist_par_re = soft_lu_bound(dist_par_re, l_limit=0, u_limit=10)
+
+        # dist_par_un = torch.clamp(dist_par_un, 0, 2.30258)# log(10)
+
+        dist_par_re = soft_lu_bound(torch.exp(dist_par_un), self.min_val_dist_par, 10)
 
         return dist_par_re
 
@@ -1812,6 +1814,8 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
         self.mod_stat = self.get_mod_stat(Y_T, **kwargs)
 
+
+
     
 
     def get_mod_stat(self, Y_T, **kwargs):
@@ -1824,8 +1828,15 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         kwargs = self.remove_sd_specific_keys(kwargs)
 
         mod_stat = dirSpW1_sequence_ss(Y_T, **kwargs)
-        mod_stat.opt_options_ss_seq["max_opt_iter"] = 5000
+
+        # mod_stat.opt_options_ss_seq["lr"]=0.01
+        mod_stat.opt_options_ss_seq["opt_n"]= "ADAM"
+        mod_stat.opt_options_ss_seq["max_opt_iter"] = 3000
+        mod_stat.opt_options_ss_seq["rel_improv_tol"] = 1e-4
         mod_stat.opt_options_ss_seq["disable_logging"] = True
+
+        mod_stat.set_inds_to_exclude_from_id() 
+        mod_stat.init_all_par_sequences()
         
         return mod_stat
 
