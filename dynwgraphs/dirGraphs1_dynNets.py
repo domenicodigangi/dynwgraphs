@@ -388,12 +388,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     Single snapshot sequence of, binary or weighted, fitness models with external regressors. 
     """
 
-    _opt_options_ss_t_def = {"opt_n" :"ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True}
-    _opt_options_ss_seq_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
+    
 
     # set default init kwargs to be shared between binary and weighted models
-    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  par_vec_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="", 
-            opt_options_ss_t = _opt_options_ss_t_def, opt_options_ss_seq = _opt_options_ss_seq_def, max_opt_iter = None, opt_n=None):
+    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  par_vec_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="",  max_opt_iter = None, opt_n=None):
 
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
         
@@ -434,8 +432,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.identif_multi_par = ""
         self.check_id_required()
         
-        self.opt_options_ss_t = opt_options_ss_t
-        self.opt_options_ss_seq = opt_options_ss_seq
+        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True}
+
+        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
+
         if max_opt_iter is not None:
             self.opt_options_ss_seq["max_opt_iter"] = max_opt_iter
         if opt_n is not None:
@@ -1089,8 +1089,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         init_sd_type : "unc_mean", "est_joint", "est_ss_before"
     """
 
-    __opt_options_sd_def = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
-
+ 
     __max_value_A = 20
     __max_value_B = 1 - 1e-3
     __B0 = torch.ones(1) * 0.98
@@ -1107,8 +1106,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
         if "opt_n" in kwargs.keys():
             self.opt_options_sd["opt_n"] = kwargs["opt_n"]
-        self.opt_options = self.opt_options_sd
-
+        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01}
         self.rescale_SD = rescale_SD
         self.init_sd_type = init_sd_type
 
