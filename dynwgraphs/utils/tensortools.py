@@ -64,6 +64,12 @@ def soft_lu_bound(x, l_limit, u_limit):
     y = dm * m( (x - dp) / dm ) - dm * m(-(dp / dm) * torch.ones(1))
     return y
 
+def soft_lu_bound2(x, l_limit, u_limit):
+    """soft lower and upper bound: force argument into a range """
+    m = lambda x: torch.tanh(x)
+    y = l_limit + (1 + m(x))/2 *(u_limit - l_limit) 
+    return y
+
 def inv_soft_lu_bound(y, l_limit, u_limit):
     """inverse soft lower and upper bound"""
     m = lambda x: torch.tanh(x)
