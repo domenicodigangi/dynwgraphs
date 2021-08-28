@@ -1090,7 +1090,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     __max_value_A = 10
     __max_value_B = 1 - 1e-3
-    __min_val_dist_par = 1e-5
     __B0 = torch.ones(1) * 0.98
     __A0 = torch.ones(1) * 0.0001
     __A0_beta = torch.ones(1) * 1e-12
@@ -1122,7 +1121,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         self.init_all_par_sequences()
 
-        self.min_val_dist_par = self.__min_val_dist_par
         
         if max_value_B is None:
             self.max_value_B = self.__max_value_B
@@ -1558,12 +1556,17 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
 class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
+    __min_val_dist_par = 1e-5
+
+
     def __init__(self, Y_T, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, avoid_ovflw_fun_flag=True, **kwargs):
         
         super().__init__( Y_T, distr = distr, like_type=like_type,  size_dist_par_un_t = size_dist_par_un_t, dist_par_tv= dist_par_tv, **kwargs)
 
         self.model_class = "dirSpW1"
         self.bin_mod = dirBin1_sequence_ss(torch.zeros(10, 10, 20), size_phi_t = "2N" )
+
+        self.min_val_dist_par = self.__min_val_dist_par
 
         self.set_inds_to_exclude_from_id()
 
@@ -1637,32 +1640,10 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         A_t = Y_t > 0
         N = A_t.shape[0]
       
-        if (self.distr == 'gamma') and (self.like_type in [0, 1]):# if non torch computation of the likelihood is required
-            # Restrict the distribution parameters.
-            dist_par_re = self.link_dist_par(dist_par_un, N, A_t)
-            if self.like_type==0:
-                """ numerically stable version """
-                log_EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t, ret_log=True)
-                # divide the computation of the loglikelihood in 4 pieces
-                tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
-                tmp1 = - torch.sum(A_t) * torch.lgamma(dist_par_re)
-                tmp2 = - dist_par_re * torch.sum(log_EYcond_mat[A_t])
-                #tmp3 = - torch.sum(torch.div(Y_t[A_t], torch.exp(log_EYcond_mat[A_t])))
-                tmp3 = - torch.sum(torch.exp(torch.log(Y_t[A_t])-log_EYcond_mat[A_t] + dist_par_re.log() ))
-                out = tmp + tmp1 + tmp2 + tmp3
-            elif self.like_type == 1:
-                EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
-                # divide the computation of the loglikelihood in 4 pieces
-                tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
-                tmp1 = - torch.sum(A_t) * torch.lgamma(dist_par_re)
-                tmp2 = - dist_par_re * torch.sum(torch.log(EYcond_mat[A_t]))
-                tmp3 = - torch.sum(torch.div(Y_t[A_t], EYcond_mat[A_t])*dist_par_re)
-                out = tmp + tmp1 + tmp2 + tmp3
-
-        else:# compute the likelihood using torch buit in functions
-            distr_obj = self.dist_from_pars(phi, beta, X_t, dist_par_un, A_t=A_t)
-            log_probs = distr_obj.log_prob(Y_t[A_t])
-            out = torch.sum(log_probs)        # softly bound loglikelihood from below??
+       
+        distr_obj = self.dist_from_pars(phi, beta, X_t, dist_par_un, A_t=A_t)
+        log_probs = distr_obj.log_prob(Y_t[A_t])
+        out = torch.sum(log_probs)        # softly bound loglikelihood from below??
 
         #out = soft_l_bound(out, -1e20)
         return out
