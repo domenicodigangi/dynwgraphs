@@ -51,7 +51,7 @@ class dirGraphs_funs(nn.Module):
         self.size_dist_par_un_t = size_dist_par_un_t
         self.size_beta_t = size_beta_t
         self.like_type = like_type
-        self.ovflw_exp_L_limit = -40
+        self.ovflw_exp_L_limit = -30
         self.ovflw_exp_U_limit = 30
         self.par_vec_id_type = par_vec_id_type
         self.obs_type = "continuous_positive"
@@ -131,7 +131,7 @@ class dirGraphs_funs(nn.Module):
             log_Econd_mat_restr = \
                 soft_lu_bound(log_Econd_mat, l_limit=self.ovflw_exp_L_limit, u_limit=self.ovflw_exp_U_limit)
         else:
-            log_Econd_mat_restr = log_Econd_mat
+            log_Econd_mat_restr = torch.clip(log_Econd_mat, self.ovflw_exp_L_limit, self.ovflw_exp_U_limit)
 
         if ret_all:
             return log_Econd_mat, log_Econd_mat_restr, torch.exp(log_Econd_mat_restr)
@@ -447,9 +447,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.identif_multi_par = ""
         self.check_id_required()
         
-        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-6}
+        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e7}
 
-        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-6}
+        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e7}
 
         if max_opt_iter is not None:
             self.opt_options_ss_seq["max_opt_iter"] = max_opt_iter
@@ -1114,7 +1114,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
  
     __max_value_A = 20
-    __max_value_B = 1 - 1e-3
+    __max_value_B = 1
     __B0 = torch.ones(1) * 0.98
     __A0 = torch.ones(1) * 0.00001
     __A0_beta = torch.ones(1) * 1e-12
@@ -1125,7 +1125,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         super().__init__(Y_T, **kwargs)
         
-        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-6}
+        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e7}
         if "max_opt_iter" in kwargs.keys():
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
         if "opt_n" in kwargs.keys():
@@ -1316,9 +1316,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     def init_static_sd_from_obs(self):
 
-        T_init = 5
-
-        self.mod_stat.T_train = T_init
+        if self.init_sd_type == "est_ss_before":
+            T_init = 50
+            self.mod_stat.T_train = T_init
 
         logger.info("init static estimate to initialize sd parameters")
 
@@ -1331,12 +1331,20 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         if self.phi_T is not None:
             if self.phi_tv:
                 self.init_one_set_sd_par(self.sd_stat_par_un_phi, self.mod_stat.phi_T[0])
+            else: 
+                self.phi_T[0] = nn.parameter.Parameter(self.mod_stat.phi_T[0])
+
         if self.dist_par_un_T is not None:
             if self.dist_par_tv:
                 self.init_one_set_sd_par(self.sd_stat_par_un_dist_par_un, self.mod_stat.dist_par_un_T[0])
+            else: 
+                self.dist_par_un_T[0] = nn.parameter.Parameter(self.mod_stat.dist_par_un_T[0])
+
         if self.beta_T is not None:
             if self.any_beta_tv():
                 self.init_one_set_sd_par(self.sd_stat_par_un_beta, self.mod_stat.beta_T[0])
+            else: 
+                self.beta_T[0] = nn.parameter.Parameter(self.mod_stat.beta_T[0])
         
         self.roll_sd_filt_train()
 
@@ -1633,6 +1641,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
             concentration = dist_par_re
             EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
             rate = torch.div(dist_par_re, EYcond_mat[A_t])
+            # print((concentration.item(), EYcond_mat.min().item(), EYcond_mat.max().item()))
            #we already took into account the dimension of dist_par above when restricting it
             distr_obj = torch.distributions.gamma.Gamma(concentration, rate)
 
@@ -1840,7 +1849,7 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         kwargs = self.remove_sd_specific_keys(kwargs)
 
         mod_stat = dirSpW1_sequence_ss(Y_T, **kwargs)
-        mod_stat.opt_options_ss_seq["max_opt_iter"] = 5000
+        mod_stat.opt_options_ss_seq["max_opt_iter"] = 2000
         mod_stat.opt_options_ss_seq["disable_logging"] = True
         
         return mod_stat
@@ -2127,7 +2136,7 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
         mod_stat = dirBin1_sequence_ss(Y_T, **kwargs)
 
-        mod_stat.opt_options_ss_seq["max_opt_iter"] = 5000
+        mod_stat.opt_options_ss_seq["max_opt_iter"] = 2000
         mod_stat.opt_options_ss_seq["disable_logging"] = True
 
         return mod_stat
