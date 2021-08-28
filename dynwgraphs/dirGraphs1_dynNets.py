@@ -42,7 +42,7 @@ class dirGraphs_funs(nn.Module):
     """
 
     #TO DO: move some unused attributes to child class
-    def __init__(self, avoid_ovflw_fun_flag=False, distr="", size_phi_t=None, size_dist_par_un_t=None, size_beta_t=None, like_type=None, par_vec_id_type=None):
+    def __init__(self, avoid_ovflw_fun_flag=None, distr="", size_phi_t=None, size_dist_par_un_t=None, size_beta_t=None, like_type=None, par_vec_id_type=None):
 
         super().__init__()
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
@@ -406,7 +406,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     
 
     # set default init kwargs to be shared between binary and weighted models
-    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=True, distr='',  par_vec_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="",  max_opt_iter = None, opt_n=None):
+    def __init__(self, Y_T, T_train=None, X_T=None, phi_tv=True, phi_par_init_type="fast_mle", avoid_ovflw_fun_flag=False, distr='',  par_vec_id_type="in_sum_eq_out_sum", like_type=None, size_phi_t="2N",   size_dist_par_un_t = None, dist_par_tv= None, size_beta_t = None, beta_tv= tens([False]).bool(), beta_start_val=0, data_name="",  max_opt_iter = None, opt_n=None):
 
         self.avoid_ovflw_fun_flag = avoid_ovflw_fun_flag
         
@@ -1578,7 +1578,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
 class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
-    def __init__(self, Y_T, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, avoid_ovflw_fun_flag=True, **kwargs):
+    def __init__(self, Y_T, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, **kwargs):
         
         super().__init__( Y_T, distr = distr, like_type=like_type,  size_dist_par_un_t = size_dist_par_un_t, dist_par_tv= dist_par_tv, **kwargs)
 
@@ -1869,7 +1869,7 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 # Binary Graphs
 class dirBin1_sequence_ss(dirGraphs_sequence_ss):
     
-    def __init__(self, Y_T, *args, avoid_ovflw_fun_flag=False, **kwargs):
+    def __init__(self, Y_T, *args, **kwargs):
 
         Y_T = tens(Y_T > 0)
 
