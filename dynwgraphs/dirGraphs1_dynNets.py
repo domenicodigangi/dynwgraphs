@@ -143,7 +143,7 @@ class dirGraphs_funs(nn.Module):
     def exp_Y(self, phi, beta, X_t):
         pass
 
-    def set_elements_from_par_tens_to(self, par_tens, inds, val):
+    def set_elements_from_par_tens_to(self, inds, val, par_tens):
         if par_tens.dim() == 1:
                 return torch.where(inds, val, par_tens)
         elif par_tens.dim() == 2:
@@ -153,6 +153,17 @@ class dirGraphs_funs(nn.Module):
                 raise
         else:
             raise Exception("Do not know how to handle tensors of parameters with more than 2 dims")
+
+    def set_elements_from_par_tens_to_oth_mean_io(self, par_tens, inds):
+        
+        inds_i, inds_o = splitVec(inds)
+        par_tens_i, par_tens_o = splitVec(par_tens)
+        
+        par_tens_i = self.set_elements_from_par_tens_to(inds_i, par_tens_i[~inds_i].mean(), par_tens_i) 
+        par_tens_o = self.set_elements_from_par_tens_to(inds_o, par_tens_o[~inds_o].mean(), par_tens_o) 
+
+        return torch.cat((par_tens_i, par_tens_o))
+
 
     def identify_io_par_to_be_sum(self, par_vec, id_type, inds_to_excl=None):
         """ enforce an identification condition on input and output parameters that are going to enter the pdf always as par_in_i + par_out_j 
@@ -166,9 +177,11 @@ class dirGraphs_funs(nn.Module):
                     pass
                 else:
                     raise Exception("If using non boolean indexing for inds_to_exclude, need to check that zero element is not being excluded")
+    
 
-            par_vec = self.set_elements_from_par_tens_to(par_vec, inds_to_excl, torch.tensor(0.0)) 
-
+        if inds_to_excl is not None:
+            par_vec = self.set_elements_from_par_tens_to_oth_mean_io(par_vec, inds_to_excl)
+          
         par_vec_i, par_vec_o = splitVec(par_vec)
 
         if id_type == "first_in_zero":
@@ -183,11 +196,12 @@ class dirGraphs_funs(nn.Module):
 
         par_vec_i_out = par_vec_i - d
         par_vec_o_out = par_vec_o + d
-
+   
         par_vec_out = torch.cat((par_vec_i_out, par_vec_o_out))
-        
+     
         if inds_to_excl is not None:
-            par_vec_out = self.set_elements_from_par_tens_to(par_vec, inds_to_excl, torch.tensor(0.0)) 
+            par_vec_out = self.set_elements_from_par_tens_to_oth_mean_io(par_vec_out, inds_to_excl)
+
 
         return par_vec_out
 
@@ -446,7 +460,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.init_all_par_sequences()
 
         self.check_types()
-        self.inds_to_exclude_from_id = None
+        self.inds_nodes_never_obs_w = None
 
 
   
@@ -563,20 +577,26 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.start_opt_from_current_par = False
 
-    def set_elements_from_par_seq_to(self, par_seq, inds,  val):
+    def set_elements_from_par_seq_to_mean_oth_t(self, par_seq, inds,):
         for t, par_tens in enumerate(par_seq):
-            par_seq[t] = self.set_elements_from_par_tens_to(par_tens, inds, val) 
-
-    def set_par_to_exclude_to_zero(self):
-        if self.inds_to_exclude_from_id is not None:
+            par_seq[t] = self.set_elements_from_par_tens_to_oth_mean_io(par_tens, inds)
+            
+    def set_never_obs_w_fit_val(self):
+        if self.inds_nodes_never_obs_w is not None:
             if self.size_phi_t == self.N:
                 raise Exception("NEed to check how to handle nver observed fitnesses for undireceted networks")
             if self.size_phi_t == 2*self.N:
-                self.set_elements_from_par_seq_to(self.phi_T, self.inds_to_exclude_from_id, torch.tensor(0.0))
+                self.set_elements_from_par_seq_to_mean_oth_t(self.phi_T, self.inds_nodes_never_obs_w)
+            
+            if self.size_beta_t == self.N:
+                raise Exception("not ready")
             if self.size_beta_t == 2*self.N:
-                self.set_elements_from_par_seq_to(self.beta_T, self.inds_to_exclude_from_id, torch.tensor(0.0))
+                self.set_elements_from_par_seq_to_mean_oth_t(self.beta_T, self.inds_nodes_never_obs_w)
+            
+            if self.size_dist_par_un_t == self.N:
+                raise Exception("not ready")
             if self.size_dist_par_un_t == 2*self.N:
-                self.set_elements_from_par_seq_to(self.beta_T, self.inds_to_exclude_from_id, torch.tensor(0.0))
+                self.set_elements_from_par_seq_to_mean_oth_t(self.beta_T, self.inds_nodes_never_obs_w)
 
     def get_Y_t(self, t):
         return self.Y_T[:,:,t]
@@ -703,7 +723,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             if n_par in [None, 1, self.N]:
                 return par_vec
             elif n_par == 2* self.N:
-                return self.identify_io_par_to_be_sum(par_vec, id_type, self.inds_to_exclude_from_id) 
+                return self.identify_io_par_to_be_sum(par_vec, id_type, self.inds_nodes_never_obs_w) 
             else:
                 raise Exception(f"No identification setting for lenght = {n_par}")
 
@@ -861,8 +881,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         if phi_T.shape[1] ==1:
             phi_T = phi_T.repeat_interleave(x.shape[0], dim=1)
 
-        if self.inds_to_exclude_from_id is not None:
-            phi_T[self.inds_to_exclude_from_id, :] = float('nan')
+        if self.inds_nodes_never_obs_w is not None:
+            phi_T[self.inds_nodes_never_obs_w, :] = float('nan')
 
         if i is not None:
             phi_i_T = (phi_T[:self.N,:])[i,:]
@@ -1020,7 +1040,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         logger.warn(f"Out of sample eval for ss sequences not ready. returning ")
         return {"auc_score":0}
 
-    def set_inds_to_exclude_from_id(self):
+    def set_inds_nodes_never_obs_w(self):
         pass
 
     def sample_Y_T(self):
@@ -1028,7 +1048,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def sample_and_set_Y_T(self, **kwargs):
         self.Y_T = self.sample_Y_T(**kwargs)
-        self.set_inds_to_exclude_from_id()
+        self.set_inds_nodes_never_obs_w()
 
     def get_avg_beta_dict(self):
         if self.beta_T is not None:
@@ -1176,8 +1196,8 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
 
     def update_sd_one_tv_par(self, par_t, s, sd_stat_par_un):
-        if self.clamp_score is not None:
-            s = torch.clamp(s, **self.clamp_score)
+        # if self.clamp_score is not None:
+            # s = torch.clamp(s, **self.clamp_score)
         w = sd_stat_par_un["w"]
         B = self.un2re_B_par(sd_stat_par_un["B"])  
         A = self.un2re_A_par(sd_stat_par_un["A"])  
@@ -1293,8 +1313,10 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def init_static_sd_from_obs(self):
 
         T_init = 5
-
         self.mod_stat.T_train = T_init
+        self.mod_stat.set_inds_nodes_never_obs_w()
+
+
 
         logger.info("init static estimate to initialize sd parameters")
 
@@ -1565,19 +1587,19 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         self.bin_mod = dirBin1_sequence_ss(torch.zeros(10, 10, 20), size_phi_t = "2N" )
 
         self.min_val_dist_par = self.__min_val_dist_par
+        self.opt_options_ss_seq["clip_grad_norm_to"] = 1e6
+        self.set_inds_nodes_never_obs_w()
 
-        self.set_inds_to_exclude_from_id()
 
 
-    def set_inds_to_exclude_from_id(self):
-        self.inds_to_exclude_from_id = strIO_from_tens_T(self.Y_T[:, :, :self.T_train]) == 0
-        if all(self.inds_to_exclude_from_id):
-            logger.warning("All parameters would be ignored. Assuming that this is a test model and setting inds_to_exclude_from_id = None")
-            self.inds_to_exclude_from_id = None
+    def set_inds_nodes_never_obs_w(self):
+        self.inds_nodes_never_obs_w = strIO_from_tens_T(self.Y_T[:, :, :self.T_train]) == 0
+        if all(self.inds_nodes_never_obs_w):
+            logger.warning("All parameters would be ignored. Assuming that this is a test model and setting inds_nodes_never_obs_w = None")
+            self.inds_nodes_never_obs_w = None
         
-        self.set_par_to_exclude_to_zero()
+        # self.inds_nodes_never_obs_w = None
 
-                        
 
     def exp_Y(self, phi, beta, X_t):
         return self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
@@ -1596,11 +1618,12 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
             phi_t_0 = torch.cat((phi_t_0_i, phi_t_0_o))
 
-            max_val = phi_t_0[~torch.isnan(phi_t_0)].max()
-            phi_t_0[torch.isnan(phi_t_0)] = -max_val
-            phi_t_0[~torch.isfinite(phi_t_0)] = - max_val
-            phi_t_0_i[K_i == 0] = - max_val
-            phi_t_0_o[K_o == 0] = - max_val
+            null_val = 0# = phi_t_0[~torch.isnan(phi_t_0)].max()
+            phi_t_0[torch.isnan(phi_t_0)] = null_val
+            phi_t_0[~torch.isfinite(phi_t_0)] = null_val
+            phi_t_0_i[K_i == 0] = null_val
+            phi_t_0_o[K_o == 0] = null_val
+        
         else:
             raise Exception("Not ready yet")
         return self.identify_par_vec(phi_t_0, self.par_vec_id_type)
@@ -1747,15 +1770,6 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
                 if rescale_flag:
                     diag_resc_mat = (sigma_mat**2)**A_t
 
-            if self.avoid_ovflw_fun_flag:
-                L = self.ovflw_exp_L_limit
-                U = self.ovflw_exp_U_limit
-                # multiply the score by the derivative of the overflow limit function
-                soft_bnd_der_mat = (1 - torch.tanh(2*((log_cond_exp_Y - L)/(L - U)) + 1)**2)
-                tmp = soft_bnd_der_mat * tmp
-                if rescale_flag:
-                    diag_resc_mat = diag_resc_mat * (soft_bnd_der_mat**2)
-
             score_phi = strIO_from_mat(tmp)
 
             #rescale score if required
@@ -1813,10 +1827,9 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         super().__init__(Y_T, **kwargs)
 
         self.mod_stat = self.get_mod_stat(Y_T, **kwargs)
+        self.opt_options_sd["clip_grad_norm_to"] = 1e6
 
 
-
-    
 
     def get_mod_stat(self, Y_T, **kwargs):
 
@@ -1830,12 +1843,12 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         mod_stat = dirSpW1_sequence_ss(Y_T, **kwargs)
 
         # mod_stat.opt_options_ss_seq["lr"]=0.01
-        mod_stat.opt_options_ss_seq["opt_n"]= "ADAM"
-        mod_stat.opt_options_ss_seq["max_opt_iter"] = 3000
-        mod_stat.opt_options_ss_seq["rel_improv_tol"] = 1e-4
-        mod_stat.opt_options_ss_seq["disable_logging"] = True
+        # mod_stat.opt_options_ss_seq["opt_n"]= "ADAM"
+        mod_stat.opt_options_ss_seq["max_opt_iter"] = 5000
+        # mod_stat.opt_options_ss_seq["rel_improv_tol"] = 1e-5
+        mod_stat.opt_options_ss_seq["disable_logging"] = False
 
-        mod_stat.set_inds_to_exclude_from_id() 
+        mod_stat.set_inds_nodes_never_obs_w() 
         mod_stat.init_all_par_sequences()
         
         return mod_stat
