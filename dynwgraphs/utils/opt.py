@@ -13,6 +13,7 @@ functions needed in different parts of the module
 """
 
 import torch
+from torch import nn
 from torch.utils.tensorboard.summary import hparams
 from ..hypergrad import SGDHD, AdamHD
 import matplotlib.pyplot as plt
@@ -43,7 +44,7 @@ def grad_norm_from_list(par_list):
         total_norm = torch.norm(torch.stack([torch.linalg.norm(p.grad.detach()).to(device) for p in parameters]), 2.0).item()
     return total_norm
 
-def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=1e-6, no_improv_max_count=10, min_opt_iter=5, bandwidth=10, small_grad_th=1e-3, tb_folder="tb_logs", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=200, disable_logging=False):
+def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=1e-6, no_improv_max_count=10, min_opt_iter=5, bandwidth=10, small_grad_th=1e-3, tb_folder="tb_logs", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=200, disable_logging=False, clip_grad_norm_to=None):
     """given a function and a starting vector, run one of different pox optimizations"""
     if disable_logging:
         logger.disabled = True
@@ -99,6 +100,8 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
             loss.backward(create_graph=True)
         else:
             loss.backward()
+        if clip_grad_norm_to is not None:
+            nn.utils.clip_grad_norm_(unPar, max_norm=clip_grad_norm_to, norm_type=2)
         return loss
 
 
