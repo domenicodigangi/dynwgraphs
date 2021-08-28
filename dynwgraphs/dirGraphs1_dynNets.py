@@ -1606,10 +1606,11 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         # Restrict the distribution parameters.
         dist_par_re = self.link_dist_par(dist_par_un, N, A_t=A_t)
         if self.distr == 'gamma':
+            concentration = dist_par_re
             EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
-           #we already took into account the dimension of dist_par above when restricting it
             rate = torch.div(dist_par_re, EYcond_mat[A_t])
-            distr_obj = torch.distributions.gamma.Gamma(dist_par_re, rate)
+           #we already took into account the dimension of dist_par above when restricting it
+            distr_obj = torch.distributions.gamma.Gamma(concentration, rate)
 
         elif self.distr == 'lognormal':
             log_EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t, ret_log=True)
