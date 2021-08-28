@@ -586,21 +586,21 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             par_seq[t] = self.set_elements_from_par_tens_to_oth_mean_io(par_tens, inds)
             
     def set_never_obs_w_fit_val(self):
-        if self.inds_nodes_never_obs_w is not None:
+        if self.inds_never_obs_w is not None:
             if self.size_phi_t == self.N:
                 raise Exception("NEed to check how to handle nver observed fitnesses for undireceted networks")
             if self.size_phi_t == 2*self.N:
-                self.set_elements_from_par_seq_to_mean_oth_t(self.phi_T, self.inds_nodes_never_obs_w)
+                self.set_elements_from_par_seq_to_mean_oth_t(self.phi_T, self.inds_never_obs_w)
             
             if self.size_beta_t == self.N:
                 raise Exception("not ready")
             if self.size_beta_t == 2*self.N:
-                self.set_elements_from_par_seq_to_mean_oth_t(self.beta_T, self.inds_nodes_never_obs_w)
+                self.set_elements_from_par_seq_to_mean_oth_t(self.beta_T, self.inds_never_obs_w)
             
             if self.size_dist_par_un_t == self.N:
                 raise Exception("not ready")
             if self.size_dist_par_un_t == 2*self.N:
-                self.set_elements_from_par_seq_to_mean_oth_t(self.beta_T, self.inds_nodes_never_obs_w)
+                self.set_elements_from_par_seq_to_mean_oth_t(self.beta_T, self.inds_never_obs_w)
 
 
     def get_Y_t(self, t):
@@ -1124,11 +1124,12 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         
         super().__init__(Y_T, **kwargs)
+        
+        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01}
         if "max_opt_iter" in kwargs.keys():
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
         if "opt_n" in kwargs.keys():
             self.opt_options_sd["opt_n"] = kwargs["opt_n"]
-        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01}
         self.rescale_SD = rescale_SD
         self.init_sd_type = init_sd_type
 
@@ -1294,6 +1295,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
                 
     def roll_sd_filt_train(self):
         self.roll_sd_filt(self.T_train)
+
+    def roll_sd_filt_all(self):
+        self.roll_sd_filt(self.T_all)
 
     def append_all_par_dict_to_list(self, par_dict, par_list, keys_to_exclude=[]):
         for k, v in par_dict.items():
@@ -1527,7 +1531,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     def load_par(self, load_path):
         super().load_par(load_path)
-        self.roll_sd_filt(T_last=self.T_all)
+        self.roll_sd_filt_train()
 
     def get_forecast(self, t):
         if t<= self.T_train:
