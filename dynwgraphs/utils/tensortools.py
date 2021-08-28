@@ -56,22 +56,15 @@ def putZeroDiag_T(mat_T):
     mat_T.masked_fill_(mask_T, 0)
     return mat_T
 
+
+
 def soft_lu_bound(x, l_limit, u_limit):
     """soft lower and upper bound: force argument into a range """
     m = lambda x: torch.tanh(x)
-    dp = (l_limit + u_limit) / 2
-    dm = (l_limit - u_limit) / 2
-    y = dm * m( (x - dp) / dm ) - dm * m(-(dp / dm) * torch.ones(1))
+
+    y = l_limit + (1 + m(x))/2 *(u_limit - l_limit) 
     return y
 
-def inv_soft_lu_bound(y, l_limit, u_limit):
-    """inverse soft lower and upper bound"""
-    m = lambda x: torch.tanh(x)
-    m_inv = lambda x: torch.atanh(x)
-    dp = (l_limit + u_limit) / 2
-    dm = (l_limit - u_limit) / 2
-    x = m_inv( (y / dm) + m(-(dp / dm)* torch.ones(1) ) ) * dm + dp
-    return x
     
 def soft_l_bound(x, l_limit):
     """ soft lower bound: force  argument into a range bounded from below"""
