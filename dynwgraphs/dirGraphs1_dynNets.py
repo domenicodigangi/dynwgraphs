@@ -1633,32 +1633,10 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         A_t = Y_t > 0
         N = A_t.shape[0]
       
-        if (self.distr == 'gamma') and (self.like_type in [0, 1]):# if non torch computation of the likelihood is required
-            # Restrict the distribution parameters.
-            dist_par_re = self.link_dist_par(dist_par_un, N, A_t)
-            if self.like_type==0:
-                """ numerically stable version """
-                log_EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t, ret_log=True)
-                # divide the computation of the loglikelihood in 4 pieces
-                tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
-                tmp1 = - torch.sum(A_t) * torch.lgamma(dist_par_re)
-                tmp2 = - dist_par_re * torch.sum(log_EYcond_mat[A_t])
-                #tmp3 = - torch.sum(torch.div(Y_t[A_t], torch.exp(log_EYcond_mat[A_t])))
-                tmp3 = - torch.sum(torch.exp(torch.log(Y_t[A_t])-log_EYcond_mat[A_t] + dist_par_re.log() ))
-                out = tmp + tmp1 + tmp2 + tmp3
-            elif self.like_type == 1:
-                EYcond_mat = self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
-                # divide the computation of the loglikelihood in 4 pieces
-                tmp = (dist_par_re - 1) * torch.sum(torch.log(Y_t[A_t]))
-                tmp1 = - torch.sum(A_t) * torch.lgamma(dist_par_re)
-                tmp2 = - dist_par_re * torch.sum(torch.log(EYcond_mat[A_t]))
-                tmp3 = - torch.sum(torch.div(Y_t[A_t], EYcond_mat[A_t])*dist_par_re)
-                out = tmp + tmp1 + tmp2 + tmp3
-
-        else:# compute the likelihood using torch buit in functions
-            distr_obj = self.dist_from_pars(phi, beta, X_t, dist_par_un, A_t=A_t)
-            log_probs = distr_obj.log_prob(Y_t[A_t])
-            out = torch.sum(log_probs)        # softly bound loglikelihood from below??
+  
+        distr_obj = self.dist_from_pars(phi, beta, X_t, dist_par_un, A_t=A_t)
+        log_probs = distr_obj.log_prob(Y_t[A_t])
+        out = torch.sum(log_probs)        # softly bound loglikelihood from below??
 
         #out = soft_l_bound(out, -1e20)
         return out
