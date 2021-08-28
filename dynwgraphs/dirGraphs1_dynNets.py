@@ -1047,6 +1047,38 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def score_t(self, t, rescale_flag, phi_flag, dist_par_un_flag, beta_flag):
         pass
 
+    
+    def get_score_T(self, T, list_par=None, rescaled = False):
+        if list_par is None:
+            list_par =[]
+            if self.phi_T is not None:
+                list_par.append("phi")
+            if self.dist_par_un_T is not None:
+                list_par.append("dist_par_un")
+            if self.beta_T is not None:
+                list_par.append("beta")
+        
+        phi_flag = "phi" in list_par
+        dist_par_un_flag = "dist_par_un" in list_par
+        beta_flag = "beta" in list_par
+
+        if self.beta_T is None:
+            if beta_flag:
+                raise Exception("Beta not present")
+
+        score_T = {k: [] for k in list_par}
+
+        for t in range(T):
+            d = self.score_t(t, rescaled, phi_flag, dist_par_un_flag, beta_flag)
+            for k, l in score_T.items():
+                l.append(d[k].unsqueeze(1))
+
+        for k, l in score_T.items():
+            score_T[k] = torch.cat(l, dim=1)
+        return score_T
+
+    def get_score_T_train(self, list_par=None, rescaled = False):
+        return self.get_score_T(self.T_train, list_par=list_par, rescaled=rescaled )
 
 
 
