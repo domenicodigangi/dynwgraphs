@@ -447,9 +447,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.identif_multi_par = ""
         self.check_id_required()
         
-        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True}
+        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-6}
 
-        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01}
+        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-6}
 
         if max_opt_iter is not None:
             self.opt_options_ss_seq["max_opt_iter"] = max_opt_iter
@@ -1125,7 +1125,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         super().__init__(Y_T, **kwargs)
         
-        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01}
+        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-6}
         if "max_opt_iter" in kwargs.keys():
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
         if "opt_n" in kwargs.keys():
