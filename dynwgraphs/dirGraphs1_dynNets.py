@@ -447,9 +447,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.identif_multi_par = ""
         self.check_id_required()
         
-        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4}
+        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4, "log_interval": 100}
 
-        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4}
+        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4, "log_interval": 100}
 
         if max_opt_iter is not None:
             self.opt_options_ss_seq["max_opt_iter"] = max_opt_iter
@@ -1068,11 +1068,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             avg_beta_dict = {"avg_beta_1": float('nan')}
         return avg_beta_dict
 
-    
+
     def score_t(self, t, rescale_flag, phi_flag, dist_par_un_flag, beta_flag):
         pass
 
-    
     def get_score_T(self, T, list_par=None, rescaled = False):
         if list_par is None:
             list_par =[]
@@ -1105,6 +1104,42 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def get_score_T_train(self, list_par=None, rescaled = False):
         return self.get_score_T(self.T_train, list_par=list_par, rescaled=rescaled )
 
+    def hess_t(self, t, phi_flag, dist_par_un_flag, beta_flag):
+
+        """
+        given the observations and the ZA gamma parameters (i.e. the cond mean
+        matrix and the dist_par_un par), return the score of the distribution wrt to, node
+        specific, parameters associated with the weights
+        """
+
+        Y_t, X_t = self.get_obs_t(t)
+
+        phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
+
+        if phi_t is not None:
+            phi_t.requires_grad = phi_flag
+        if dist_par_un_t is not None:
+            dist_par_un_t.requires_grad = dist_par_un_flag
+        if beta_t is not None:
+            beta_t.requires_grad = beta_flag
+
+        hess_dict = {}
+        # like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
+
+        if beta_flag:
+            fun = lambda x: self.loglike_t(Y_t, phi_t, beta=x, X_t=X_t, dist_par_un=dist_par_un_t)
+
+            hess_dict["beta"] = hessian(fun, beta_t)[0]
+        if dist_par_un_flag:
+            fun = lambda x: self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=x)
+            hess_dict["dist_par_un"] = hessian(fun, dist_par_un_t)[0]
+        
+        if phi_flag:
+            fun = lambda x: self.loglike_t(Y_t, x, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
+            hess_dict["phi"] = hessian(fun, phi_t)
+        
+        return hess_dict
+
 
 
 class dirGraphs_SD(dirGraphs_sequence_ss):
@@ -1118,8 +1153,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     __max_value_A = 20
     __max_value_B = 1
     __B0 = torch.ones(1) * 0.98
-    __A0 = torch.ones(1) * 0.00001
+    __A0 = torch.ones(1) * 0.005
     __A0_beta = torch.ones(1) * 1e-12
+    __max_score_val =  20
 
 
     def __init__(self, Y_T, init_sd_type = "est_ss_before", rescale_SD = True, **kwargs ):
@@ -1127,22 +1163,23 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         super().__init__(Y_T, **kwargs)
         
-        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4}
+        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4, "log_interval": 100}
         if "max_opt_iter" in kwargs.keys():
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
         if "opt_n" in kwargs.keys():
             self.opt_options_sd["opt_n"] = kwargs["opt_n"]
         self.rescale_SD = rescale_SD
         self.init_sd_type = init_sd_type
-
+        self.max_score_val =  self.__max_score_val
         self.init_all_stat_par()
    
     def remove_sd_specific_keys(self, dic):
         dic.pop("init_sd_type", None)
         dic.pop("rescale_SD", None)
         dic.pop("opt_options_sd", None)
-        return dic        
-
+        return dic 
+        
+    
     def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_B=None, max_value_A=None):
 
         self.init_all_par_sequences()
@@ -1204,6 +1241,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
 
     def update_sd_one_tv_par(self, par_t, s, sd_stat_par_un):
+        s = torch.clamp(s, self.max_score_val)
         w = sd_stat_par_un["w"]
         B = self.un2re_B_par(sd_stat_par_un["B"])  
         A = self.un2re_A_par(sd_stat_par_un["A"])  
@@ -1253,6 +1291,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         return w/(1-B)
         
     def set_unc_mean(self, unc_mean, sd_stat_par_un):
+        unc_mean = self.identify_par_vec(unc_mean, self.par_vec_id_type)
         B = self.un2re_B_par(sd_stat_par_un["B"])  
         w_implied_by_unc_mean = (1-B) * unc_mean 
         sd_stat_par_un["w"] = nn.parameter.Parameter(w_implied_by_unc_mean, requires_grad=True)
@@ -1592,13 +1631,19 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
 class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
-    def __init__(self, Y_T, distr="gamma", like_type=2,  size_dist_par_un_t = 1, dist_par_tv= False, **kwargs):
+    def __init__(self, Y_T, **kwargs):
         
-        super().__init__( Y_T, distr = distr, like_type=like_type,  size_dist_par_un_t = size_dist_par_un_t, dist_par_tv= dist_par_tv, **kwargs)
+        # set default kw arguments
+        kwargs["distr"] = "gamma" if "distr" not in kwargs.keys() else kwargs["distr"]
+        kwargs["like_type"] = 2 if "like_type" not in kwargs.keys() else kwargs["like_type"]
+        kwargs["size_dist_par_un_t"] = 1 if "size_dist_par_un_t" not in kwargs.keys() else kwargs["size_dist_par_un_t"]
+        kwargs["dist_par_tv"] = False if "dist_par_tv" not in kwargs.keys() else kwargs["dist_par_tv"]
+
+        super().__init__( Y_T, **kwargs)
 
         self.model_class = "dirSpW1"
         self.bin_mod = dirBin1_sequence_ss(torch.zeros(10, 10, 20), size_phi_t = "2N" )
-
+        self.obs_type = "w"
         self.set_inds_never_obs_w()
 
 
@@ -1798,42 +1843,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         return score_dict
 
 
-    def hess_t(self, t, phi_flag, dist_par_un_flag, beta_flag):
-
-        """
-        given the observations and the ZA gamma parameters (i.e. the cond mean
-        matrix and the dist_par_un par), return the score of the distribution wrt to, node
-        specific, parameters associated with the weights
-        """
-
-        Y_t, X_t = self.get_obs_t(t)
-
-        phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
-
-        if phi_t is not None:
-            phi_t.requires_grad = phi_flag
-        if dist_par_un_t is not None:
-            dist_par_un_t.requires_grad = dist_par_un_flag
-        if beta_t is not None:
-            beta_t.requires_grad = beta_flag
-
-        hess_dict = {}
-        like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
-
-        if beta_flag:
-            fun = lambda x: self.loglike_t(Y_t, phi_t, beta=x, X_t=X_t, dist_par_un=dist_par_un_t)
-
-            hess_dict["beta"] = hessian(fun, beta_t)[0]
-        if dist_par_un_flag:
-            fun = lambda x: self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=x)
-            hess_dict["dist_par_un"] = hessian(fun, dist_par_un_t)[0]
-        
-        if phi_flag:
-            fun = lambda x: self.loglike_t(Y_t, x, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
-            hess_dict["phi"] = hessian(fun, phi_t)
-        
-        return hess_dict
-
+    
 class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
 
@@ -1890,7 +1900,10 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
 
         Y_T = tens(Y_T > 0)
 
-        super().__init__( Y_T, *args, distr = "bernoulli", **kwargs)
+        # set default kw arguments
+        kwargs["distr"] = "bernoulli" if "distr" not in kwargs.keys() else kwargs["distr"]
+
+        super().__init__( Y_T, *args, **kwargs)
   
         self.obs_type = "bin"
 
@@ -2133,6 +2146,7 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         self.mod_for_init = self.get_mod_for_init(Y_T, **kwargs)
 
 
+
     def get_mod_for_init(self, Y_T, **kwargs):
         kwargs["phi_tv"] = False
         kwargs["dist_par_tv"] = False
@@ -2168,9 +2182,19 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         return self.model_class + super().info_filter()
 
         
-# Instantiate function
+# utils functions
+
+
+def remove_w_specific_keys(dic):
+        dic.pop("size_dis_parun_t", None)
+        dic.pop("like_type", None)
+        dic.pop("dist_par_tv", None)
+        return dic        
 
 def get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, **kwargs):
+    if bin_or_w == "bin":
+        kwargs = remove_w_specific_keys(kwargs)
+
     if (bin_or_w == "bin") and (ss_or_sd == "ss"):
         return dirBin1_sequence_ss(Y_T, **kwargs)
     elif (bin_or_w == "w") and (ss_or_sd == "ss"):
