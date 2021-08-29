@@ -44,7 +44,7 @@ def grad_norm_from_list(par_list):
         total_norm = torch.norm(torch.stack([torch.linalg.norm(p.grad.detach()).to(device) for p in parameters]), 2.0).item()
     return total_norm
 
-def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=5, bandwidth=10, small_grad_th=1e-3, tb_folder="tb_logs", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=200, disable_logging=False, clip_grad_norm_to=None):
+def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, tb_folder="tb_logs", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=200, disable_logging=False, clip_grad_norm_to=None, clip_grad_val_to=1e3):
     """given a function and a starting vector, run one of different pox optimizations"""
     if disable_logging:
         logger.disabled = True
@@ -103,6 +103,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
 
         if clip_grad_norm_to is not None:
             nn.utils.clip_grad_norm_(unPar, max_norm=clip_grad_norm_to, norm_type=2)
+            nn.utils.clip_grad_value_(unPar, clip_grad_val_to)
         return loss
 
 
@@ -127,6 +128,8 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
             # check the gradient's norm
             
             grad_norm = grad_norm_from_list(unPar) 
+            grad_max_vals = [p.max().item() for p in unPar] 
+            grad_max = np.max(grad_max_vals)
             small_grad_flag = grad_norm < small_grad_th
             # check presence of nans in opt vector
             nan_flag = np.any([torch.isnan(par).any().item() for par in unPar])
@@ -151,13 +154,14 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
                 writer.add_scalar('Loss/value', loss.item(), n_iter)
                 writer.add_scalar('Loss/roll_avg_rel_improv', roll_rel_im, n_iter)
                 writer.add_scalar('Loss/grad_norm', grad_norm, n_iter)
+                writer.add_scalar('Loss/grad_max', grad_norm, n_iter)
 
             if (n_iter % log_interval) == 0:
-                logger.info(f" iter {n_iter}, g_norm {'{:.3e}'.format(grad_norm)}, roll rel impr { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
+                logger.info(f" iter {n_iter}, g_norm {'{:.3e}'.format(grad_norm)}, g_max {'{:.3e}'.format(grad_max)}, roll rel impr { '{:.3e}'.format( roll_rel_im)},  loss {'{:.5e}'.format(loss.item())}")
         except:
             raise Exception(f"Error at iter {n_iter}, with parameters {unPar}")
 
-    opt_metrics = {"actual_n_opt_iter": n_iter, "final_grad_norm": grad_norm, "final_roll_improv": roll_rel_im, "final_loss": loss.item()}
+    opt_metrics = {"actual_n_opt_iter": n_iter, "final_grad_norm": grad_norm, "final_grad_max": grad_max, "final_roll_improv": roll_rel_im, "final_loss": loss.item()}
     hparams_dict["max_opt_iter"]= max_opt_iter
 
 
