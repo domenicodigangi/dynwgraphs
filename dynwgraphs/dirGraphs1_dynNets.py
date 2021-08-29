@@ -447,9 +447,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.identif_multi_par = ""
         self.check_id_required()
         
-        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e5}
+        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4}
 
-        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e5}
+        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4}
 
         if max_opt_iter is not None:
             self.opt_options_ss_seq["max_opt_iter"] = max_opt_iter
@@ -1127,7 +1127,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         super().__init__(Y_T, **kwargs)
         
-        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e5}
+        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4}
         if "max_opt_iter" in kwargs.keys():
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
         if "opt_n" in kwargs.keys():
@@ -1319,11 +1319,11 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def init_static_sd_from_obs(self):
 
         # T_init = 50
-        # self.mod_stat.T_train = T_init
+        # self.mod_for_init.T_train = T_init
 
         logger.info("init static estimate to initialize sd parameters")
 
-        self.mod_stat.estimate_ss_seq_joint(tb_log_flag=False)
+        self.mod_for_init.estimate_ss_seq_joint(tb_log_flag=False)
 
         
         if self.init_sd_type not in ["unc_mean", "est_ss_before", "est_joint"]:
@@ -1331,21 +1331,21 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         if self.phi_T is not None:
             if self.phi_tv:
-                self.init_one_set_sd_par(self.sd_stat_par_un_phi, self.mod_stat.phi_T[0])
+                self.init_one_set_sd_par(self.sd_stat_par_un_phi, self.mod_for_init.phi_T[0])
             else: 
-                self.phi_T[0] = nn.parameter.Parameter(self.mod_stat.phi_T[0])
+                self.phi_T[0] = nn.parameter.Parameter(self.mod_for_init.phi_T[0])
 
         if self.dist_par_un_T is not None:
             if self.dist_par_tv:
-                self.init_one_set_sd_par(self.sd_stat_par_un_dist_par_un, self.mod_stat.dist_par_un_T[0])
+                self.init_one_set_sd_par(self.sd_stat_par_un_dist_par_un, self.mod_for_init.dist_par_un_T[0])
             else: 
-                self.dist_par_un_T[0] = nn.parameter.Parameter(self.mod_stat.dist_par_un_T[0])
+                self.dist_par_un_T[0] = nn.parameter.Parameter(self.mod_for_init.dist_par_un_T[0])
 
-        if self.beta_T is not None:
-            if self.any_beta_tv():
-                self.init_one_set_sd_par(self.sd_stat_par_un_beta, self.mod_stat.beta_T[0])
-            else: 
-                self.beta_T[0] = nn.parameter.Parameter(self.mod_stat.beta_T[0])
+        # if self.beta_T is not None:
+        #     if self.any_beta_tv():
+        #         self.init_one_set_sd_par(self.sd_stat_par_un_beta, self.mod_for_init.beta_T[0])
+        #     else: 
+        #         self.beta_T[0] = nn.parameter.Parameter(self.mod_for_init.beta_T[0])
         
         self.roll_sd_filt_train()
 
@@ -1841,24 +1841,26 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
         super().__init__(Y_T, **kwargs)
 
-        self.mod_stat = self.get_mod_stat(Y_T, **kwargs)
+        self.mod_for_init = self.get_mod_for_init(Y_T, **kwargs)
 
     
 
-    def get_mod_stat(self, Y_T, **kwargs):
-
+    def get_mod_for_init(self, Y_T, **kwargs):
+        #get a model without regressor and with static parameters
         kwargs["phi_tv"] = False
         kwargs["dist_par_tv"] = False
-        beta_stat = copy.deepcopy(self.beta_tv)
-        beta_stat = False
-        kwargs["beta_tv"] = beta_stat
+        
+        kwargs.pop("X_T", None)
+        kwargs.pop("size_beta_t", None)
+        kwargs.pop("beta_tv", None)
+        
         kwargs = self.remove_sd_specific_keys(kwargs)
 
-        mod_stat = dirSpW1_sequence_ss(Y_T, **kwargs)
-        mod_stat.opt_options_ss_seq["max_opt_iter"] = 500
-        mod_stat.opt_options_ss_seq["disable_logging"] = True
+        mod_for_init = dirSpW1_sequence_ss(Y_T, **kwargs)
+        mod_for_init.opt_options_ss_seq["max_opt_iter"] = 500
+        mod_for_init.opt_options_ss_seq["disable_logging"] = True
         
-        return mod_stat
+        return mod_for_init
 
 
     def out_of_sample_eval(self, exclude_never_obs_train=True):
@@ -2128,24 +2130,24 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
         self.check_mat_is_bin()
 
-        self.mod_stat = self.get_mod_stat(Y_T, **kwargs)
+        self.mod_for_init = self.get_mod_for_init(Y_T, **kwargs)
 
 
-    def get_mod_stat(self, Y_T, **kwargs):
+    def get_mod_for_init(self, Y_T, **kwargs):
         kwargs["phi_tv"] = False
         kwargs["dist_par_tv"] = False
-        beta_stat = copy.deepcopy(self.beta_tv)
-        beta_stat = False
-        kwargs["beta_tv"] = beta_stat
-
+        kwargs.pop("X_T", None)
+        kwargs.pop("size_beta_t", None)
+        kwargs.pop("beta_tv", None)
+        
         kwargs = self.remove_sd_specific_keys(kwargs)
 
-        mod_stat = dirBin1_sequence_ss(Y_T, **kwargs)
+        mod_for_init = dirBin1_sequence_ss(Y_T, **kwargs)
 
-        mod_stat.opt_options_ss_seq["max_opt_iter"] = 500
-        mod_stat.opt_options_ss_seq["disable_logging"] = True
+        mod_for_init.opt_options_ss_seq["max_opt_iter"] = 500
+        mod_for_init.opt_options_ss_seq["disable_logging"] = True
 
-        return mod_stat
+        return mod_for_init
 
 
   
