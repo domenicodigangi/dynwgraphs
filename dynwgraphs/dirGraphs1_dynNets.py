@@ -1095,7 +1095,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         for t in range(T):
             d = self.score_t(t, rescaled, phi_flag, dist_par_un_flag, beta_flag)
             for k, l in score_T.items():
-                l.append(d[k].unsqueeze(1))
+                l.append(d[k].unsqueeze(1).detach())
 
         for k, l in score_T.items():
             score_T[k] = torch.cat(l, dim=1)
@@ -1116,32 +1116,47 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
 
-        if phi_t is not None:
-            phi_t.requires_grad = phi_flag
-        if dist_par_un_t is not None:
-            dist_par_un_t.requires_grad = dist_par_un_flag
-        if beta_t is not None:
-            beta_t.requires_grad = beta_flag
-
         hess_dict = {}
         # like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
 
         if beta_flag:
             fun = lambda x: self.loglike_t(Y_t, phi_t, beta=x, X_t=X_t, dist_par_un=dist_par_un_t)
 
-            hess_dict["beta"] = hessian(fun, beta_t)[0]
+            hess_dict["beta"] = hessian(fun, beta_t, create_graph=True).detach()
         if dist_par_un_flag:
             fun = lambda x: self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=x)
-            hess_dict["dist_par_un"] = hessian(fun, dist_par_un_t)[0]
+            hess_dict["dist_par_un"] = hessian(fun, dist_par_un_t, create_graph=True).detach()
         
         if phi_flag:
             fun = lambda x: self.loglike_t(Y_t, x, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
-            hess_dict["phi"] = hessian(fun, phi_t)
+            hess_dict["phi"] = hessian(fun, phi_t, create_graph=True).detach()
         
         return hess_dict
 
+    def get_hess_T(self, T, list_par):
 
+        phi_flag = "phi" in list_par
+        dist_par_un_flag = "dist_par_un" in list_par
+        beta_flag = "beta" in list_par
 
+        if self.beta_T is None:
+            if beta_flag:
+                raise Exception("Beta not present")
+
+        hess_T = {k: [] for k in list_par}
+
+        for t in range(T):
+            d = self.hess_t(t, phi_flag, dist_par_un_flag, beta_flag)
+            for k, l in hess_T.items():
+                l.append(d[k].unsqueeze(2))
+
+        for k, l in hess_T.items():
+            hess_T[k] = torch.cat(l, dim=2)
+
+        return hess_T
+
+    def get_hess_T_train(self, list_par):
+        return self.get_hess_T(self.T_train, list_par)
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
         Version With Score Driven parameters.
@@ -1153,9 +1168,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     __max_value_A = 20
     __max_value_B = 1
     __B0 = torch.ones(1) * 0.98
-    __A0 = torch.ones(1) * 0.005
+    __A0 = torch.ones(1) * 0.01
     __A0_beta = torch.ones(1) * 1e-12
-    __max_score_val =  20
+    __max_score_rescaled_val =  50
 
 
     def __init__(self, Y_T, init_sd_type = "est_ss_before", rescale_SD = True, **kwargs ):
@@ -1170,7 +1185,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.opt_options_sd["opt_n"] = kwargs["opt_n"]
         self.rescale_SD = rescale_SD
         self.init_sd_type = init_sd_type
-        self.max_score_val =  self.__max_score_val
+        self.max_score_rescaled_val =  self.__max_score_rescaled_val
         self.init_all_stat_par()
    
     def remove_sd_specific_keys(self, dic):
@@ -1241,7 +1256,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
 
     def update_sd_one_tv_par(self, par_t, s, sd_stat_par_un):
-        s = torch.clamp(s, self.max_score_val)
+        s = torch.clamp(s, self.max_score_rescaled_val)
         w = sd_stat_par_un["w"]
         B = self.un2re_B_par(sd_stat_par_un["B"])  
         A = self.un2re_A_par(sd_stat_par_un["A"])  
@@ -1626,6 +1641,17 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     def out_of_sample_eval(self):
         pass
+
+
+        
+    def get_seq_mod(self):
+        mod_args = {"T_train": self.T_train, "X_T": self.X_T, "phi_tv": self.phi_tv, "phi_par_init_type": self.phi_par_init_type, "avoid_ovflw_fun_flag": self.avoid_ovflw_fun_flag, "distr": self.distr, "par_vec_id_type": self.par_vec_id_type, "like_type": self.like_type, "size_phi_t": self.size_phi_t, "size_dist_par_un_t": self.size_dist_par_un_t , "dist_par_tv": self.dist_par_tv, "size_beta_t": self.size_beta_t , "beta_tv": self.beta_tv, "beta_start_val": self.beta_start_val, "data_name": self.data_name}
+
+
+        mod_ss = get_gen_fit_mod(self.obs_type, "ss", self.Y_T, **mod_args)
+
+        return mod_ss
+
 
 # Weighted Graphs
 
@@ -2095,8 +2121,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
             # compute the score with AD using Autograd
             like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t)
 
-            if self.any_beta_tv():
-                score_dict["beta"] = grad(like_t, beta_t, create_graph=True)[0]
+            score_dict["beta"] = grad(like_t, beta_t, create_graph=True)[0]
         
             if rescale_flag:
                 pass
