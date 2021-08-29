@@ -28,7 +28,7 @@ from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_err
 
 from pathlib import Path
 from torch.autograd import grad
-from torch.autograd.functional import hessian
+from torch.autograd.functional import hessian, jacobian
 import torch.nn as nn
 import logging
 logger = logging.getLogger(__name__)
@@ -447,9 +447,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.identif_multi_par = ""
         self.check_id_required()
         
-        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4, "log_interval": 100}
+        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-6, "clip_grad_norm_to": 1e4, "log_interval": 100}
 
-        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4, "log_interval": 100}
+        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-6, "clip_grad_norm_to": 1e4, "log_interval": 100}
 
         if max_opt_iter is not None:
             self.opt_options_ss_seq["max_opt_iter"] = max_opt_iter
@@ -1072,6 +1072,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def score_t(self, t, rescale_flag, phi_flag, dist_par_un_flag, beta_flag):
         pass
 
+   
     def get_score_T(self, T, list_par=None, rescaled = False):
         if list_par is None:
             list_par =[]
@@ -1098,42 +1099,43 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 l.append(d[k].unsqueeze(d[k].dim()).detach())
 
         for k, l in score_T.items():
-            score_T[k] = torch.cat(l, dim=1)
+            score_T[k] = torch.cat(l, dim=l[0].dim()-1)
         return score_T
 
     def get_score_T_train(self, list_par=None, rescaled = False):
         return self.get_score_T(self.T_train, list_par=list_par, rescaled=rescaled )
 
-    def hess_t(self, t, phi_flag, dist_par_un_flag, beta_flag):
-
-        """
-        given the observations and the ZA gamma parameters (i.e. the cond mean
-        matrix and the dist_par_un par), return the score of the distribution wrt to, node
-        specific, parameters associated with the weights
-        """
+    def score_hess_t(self, t, phi_flag, dist_par_un_flag, beta_flag):
 
         Y_t, X_t = self.get_obs_t(t)
 
         phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
 
+        score_dict = {}
         hess_dict = {}
         # like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
 
         if beta_flag:
             fun = lambda x: self.loglike_t(Y_t, phi_t, beta=x, X_t=X_t, dist_par_un=dist_par_un_t)
 
+            score_dict["beta"] = jacobian(fun, beta_t, create_graph=True).detach()
+
             hess_dict["beta"] = hessian(fun, beta_t, create_graph=True).detach()
         if dist_par_un_flag:
             fun = lambda x: self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=x)
+
+            score_dict["dist_par_un"] = jacobian(fun, dist_par_un_t, create_graph=True).detach()
             hess_dict["dist_par_un"] = hessian(fun, dist_par_un_t, create_graph=True).detach()
         
         if phi_flag:
             fun = lambda x: self.loglike_t(Y_t, x, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
+            
+            score_dict["phi"] = jacobian(fun, phi_t, create_graph=True).detach()
             hess_dict["phi"] = hessian(fun, phi_t, create_graph=True).detach()
         
-        return hess_dict
+        return score_dict, hess_dict
 
-    def get_hess_T(self, T, list_par):
+    def get_score_hess_T(self, T, list_par):
 
         phi_flag = "phi" in list_par
         dist_par_un_flag = "dist_par_un" in list_par
@@ -1144,19 +1146,39 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 raise Exception("Beta not present")
 
         hess_T = {k: [] for k in list_par}
+        score_T = {k: [] for k in list_par}
 
         for t in range(T):
-            d = self.hess_t(t, phi_flag, dist_par_un_flag, beta_flag)
+            d_s, d_h = self.score_hess_t(t, phi_flag, dist_par_un_flag, beta_flag)
             for k, l in hess_T.items():
-                l.append(d[k].unsqueeze(d[k].dim()))
+                l.append(d_h[k].unsqueeze(d_h[k].dim()))
+            for k, l in score_T.items():
+                l.append(d_s[k].unsqueeze(d_s[k].dim()))
 
         for k, l in hess_T.items():
-            hess_T[k] = torch.cat(l, dim=l[0].dim())
+            hess_T[k] = torch.cat(l, dim=l[0].dim()-1)
+        for k, l in score_T.items():
+            score_T[k] = torch.cat(l, dim=l[0].dim()-1)
 
-        return hess_T
+        return score_T, hess_T
 
-    def get_hess_T_train(self, list_par):
-        return self.get_hess_T(self.T_train, list_par)
+    def get_score_hess_T_train(self, list_par):
+        return self.get_score_hess_T(self.T_train, list_par)
+
+    def get_cov_mat_stat_est(self, par_name):
+        s_T, h_T = self.get_score_hess_T_train([par_name])
+        
+
+        if par_name == "beta":
+            if self.beta_T[0].shape[1]==1: #one regressor
+                if self.beta_T[0].shape[0]: # one par
+                    A = h_T[par_name].sum(h_T[par_name].dim()-1).squeeze().unsqueeze(0).unsqueeze(1)
+                    B = (s_T[par_name].squeeze() **2).sum().unsqueeze(0).unsqueeze(1)
+
+        V = torch.mm(-torch.inverse(A), torch.mm(B ,(-torch.inverse(A))))
+
+        return V
+
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
         Version With Score Driven parameters.
@@ -1165,12 +1187,12 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     """
 
  
-    __max_value_A = 20
+    __max_value_A = 30
     __max_value_B = 1
     __B0 = torch.ones(1) * 0.98
-    __A0 = torch.ones(1) * 0.01
-    __A0_beta = torch.ones(1) * 1e-12
-    __max_score_rescaled_val =  50
+    __A0 = torch.ones(1) * 0.001
+    __A0_beta = torch.ones(1) * 0.001
+    __max_score_rescaled_val =  20
 
 
     def __init__(self, Y_T, init_sd_type = "est_ss_before", rescale_SD = True, **kwargs ):
@@ -1178,7 +1200,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         super().__init__(Y_T, **kwargs)
         
-        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4, "log_interval": 100}
+        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-6, "clip_grad_norm_to": 1e4, "log_interval": 100}
         if "max_opt_iter" in kwargs.keys():
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
         if "opt_n" in kwargs.keys():
@@ -1374,10 +1396,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         # T_init = 50
         # self.mod_for_init.T_train = T_init
-
-        logger.info("init static estimate to initialize sd parameters")
-
-        self.mod_for_init.estimate_ss_seq_joint(tb_log_flag=False)
+        
 
         
         if self.init_sd_type not in ["unc_mean", "est_ss_before", "est_joint"]:
@@ -1385,21 +1404,17 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         if self.phi_T is not None:
             if self.phi_tv:
+                logger.info("init static estimate to initialize sd parameters")
+                self.mod_for_init.estimate_ss_seq_joint(tb_log_flag=False)
+            
                 self.init_one_set_sd_par(self.sd_stat_par_un_phi, self.mod_for_init.phi_T[0])
-            else: 
-                self.phi_T[0] = nn.parameter.Parameter(self.mod_for_init.phi_T[0])
+        
+                if self.dist_par_un_T is not None:
+                    if self.dist_par_tv:
+                        self.init_one_set_sd_par(self.sd_stat_par_un_dist_par_un, self.mod_for_init.dist_par_un_T[0])
+                    else: 
+                        self.dist_par_un_T[0] = nn.parameter.Parameter(self.mod_for_init.dist_par_un_T[0])
 
-        if self.dist_par_un_T is not None:
-            if self.dist_par_tv:
-                self.init_one_set_sd_par(self.sd_stat_par_un_dist_par_un, self.mod_for_init.dist_par_un_T[0])
-            else: 
-                self.dist_par_un_T[0] = nn.parameter.Parameter(self.mod_for_init.dist_par_un_T[0])
-
-        # if self.beta_T is not None:
-        #     if self.any_beta_tv():
-        #         self.init_one_set_sd_par(self.sd_stat_par_un_beta, self.mod_for_init.beta_T[0])
-        #     else: 
-        #         self.beta_T[0] = nn.parameter.Parameter(self.mod_for_init.beta_T[0])
         
         self.roll_sd_filt_train()
 
