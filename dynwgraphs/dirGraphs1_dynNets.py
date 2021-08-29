@@ -1095,7 +1095,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         for t in range(T):
             d = self.score_t(t, rescaled, phi_flag, dist_par_un_flag, beta_flag)
             for k, l in score_T.items():
-                l.append(d[k].unsqueeze(1).detach())
+                l.append(d[k].unsqueeze(d[k].dim()).detach())
 
         for k, l in score_T.items():
             score_T[k] = torch.cat(l, dim=1)
@@ -1148,10 +1148,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         for t in range(T):
             d = self.hess_t(t, phi_flag, dist_par_un_flag, beta_flag)
             for k, l in hess_T.items():
-                l.append(d[k].unsqueeze(2))
+                l.append(d[k].unsqueeze(d[k].dim()))
 
         for k, l in hess_T.items():
-            hess_T[k] = torch.cat(l, dim=2)
+            hess_T[k] = torch.cat(l, dim=l[0].dim())
 
         return hess_T
 
@@ -1256,7 +1256,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
 
     def update_sd_one_tv_par(self, par_t, s, sd_stat_par_un):
-        s = torch.clamp(s, self.max_score_rescaled_val)
+        s = torch.clamp(s, min=-self.max_score_rescaled_val, max = self.max_score_rescaled_val)
         w = sd_stat_par_un["w"]
         B = self.un2re_B_par(sd_stat_par_un["B"])  
         A = self.un2re_A_par(sd_stat_par_un["A"])  
