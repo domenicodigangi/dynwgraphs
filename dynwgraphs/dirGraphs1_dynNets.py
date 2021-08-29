@@ -447,9 +447,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.identif_multi_par = ""
         self.check_id_required()
         
-        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e7}
+        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e5}
 
-        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e7}
+        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e5}
 
         if max_opt_iter is not None:
             self.opt_options_ss_seq["max_opt_iter"] = max_opt_iter
@@ -943,12 +943,11 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         for l in self.par_dict_to_save.values():
             self.par_l_to_opt.extend(l)
 
-    def estimate_ss_seq_joint(self, tb_log_flag=True, tb_save_fold="tb_logs"):
+    def estimate_ss_seq_joint(self, tb_log_flag=True, tb_save_fold="tb_logs", **kwargs):
         """
         Estimate from sequence of observations a set of parameters that can be time varying or constant. If time varying estimate a different set of parameters for each time step
         """
         
-        logger.info(self.opt_options)
         
 
         self.run_checks()
@@ -965,6 +964,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             return  - self.loglike_seq_T()
       
         run_name = f"SSSeq_"
+
+        self.opt_options.update({*kwargs})
+        
+        logger.info(f"ESTIMATE SS SEQ : {self.opt_options}")
 
         opt_out = optim_torch(obj_fun, self.par_l_to_opt, **self.opt_options_ss_seq, run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
 
@@ -1004,16 +1007,15 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.set_par_val_from_dict(par_dic)
 
-    def set_par_val_from_dict(self, dict):
-        for k, v in dict.items():
-            logger.info(f"setting {k}")
+    def set_par_val_from_dict(self, par_dic):
+        for k, v in par_dic.items():
             if not hasattr(self, k):
                 raise Exception(f"attribute {k} not present")
             else:
                 a = getattr(self, k)
                 if type(a) != type(v):
                     if type(a) == list:
-                        if type(a[0]) != type(v):
+                        if type(a[0]) != type(v[0]):
                             raise Exception(f"attribute {k} of wrong type")
                         else:
                             if not a[0].shape == v.shape:
@@ -1023,7 +1025,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                     else:
                         raise Exception(f"attribute {k} of wrong type")
                 else:                    
-                    if type(a) in [dict, torch.nn.modules.container.ParameterDict ]:
+                    if type(a) in [par_dic, torch.nn.modules.container.ParameterDict ]:
                         for k1, v1 in a.items():
                             # logger.info(f"setting {k1}")
                             if not v1.shape == v[k1].shape:
@@ -1125,7 +1127,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         super().__init__(Y_T, **kwargs)
         
-        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e7}
+        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e5}
         if "max_opt_iter" in kwargs.keys():
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
         if "opt_n" in kwargs.keys():
@@ -1316,9 +1318,8 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     def init_static_sd_from_obs(self):
 
-        if self.init_sd_type == "est_ss_before":
-            T_init = 50
-            self.mod_stat.T_train = T_init
+        # T_init = 50
+        # self.mod_stat.T_train = T_init
 
         logger.info("init static estimate to initialize sd parameters")
 
@@ -1402,8 +1403,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             self.par_l_to_opt.append(self.beta_T[0])
             self.par_dict_to_save["beta_T"] = self.beta_T[0]
 
-    def estimate_sd(self, tb_log_flag=True, tb_save_fold="tb_logs"):
-        logger.info(self.opt_options)
+    def estimate_sd(self, tb_log_flag=True, tb_save_fold="tb_logs", **kwargs):
+        
+        
         self.run_checks()
 
         if not self.start_opt_from_current_par:
@@ -1419,7 +1421,11 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         run_name = self.info_filter()
         
-        opt_res = optim_torch(obj_fun, list(self.par_l_to_opt), **self.opt_options_sd, run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold)
+        self.opt_options_sd.update({**kwargs})
+
+        logger.info(f"ESTIMATE SD : {self.opt_options}")
+
+        opt_res = optim_torch(obj_fun, list(self.par_l_to_opt), **self.opt_options_sd, run_name=run_name, tb_log_flag=tb_log_flag, hparams_dict_in = self.get_info_dict(), tb_folder=tb_save_fold, )
 
       
         return opt_res
@@ -1849,7 +1855,7 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         kwargs = self.remove_sd_specific_keys(kwargs)
 
         mod_stat = dirSpW1_sequence_ss(Y_T, **kwargs)
-        mod_stat.opt_options_ss_seq["max_opt_iter"] = 2000
+        mod_stat.opt_options_ss_seq["max_opt_iter"] = 500
         mod_stat.opt_options_ss_seq["disable_logging"] = True
         
         return mod_stat
@@ -2136,7 +2142,7 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
         mod_stat = dirBin1_sequence_ss(Y_T, **kwargs)
 
-        mod_stat.opt_options_ss_seq["max_opt_iter"] = 2000
+        mod_stat.opt_options_ss_seq["max_opt_iter"] = 500
         mod_stat.opt_options_ss_seq["disable_logging"] = True
 
         return mod_stat
