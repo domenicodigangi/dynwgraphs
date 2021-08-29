@@ -44,7 +44,7 @@ def grad_norm_from_list(par_list):
         total_norm = torch.norm(torch.stack([torch.linalg.norm(p.grad.detach()).to(device) for p in parameters]), 2.0).item()
     return total_norm
 
-def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=50, bandwidth=10, small_grad_th=1e-3, tb_folder="tb_logs", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=200, disable_logging=False, clip_grad_norm_to=None):
+def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel_improv_tol=5e-8, no_improv_max_count=10, min_opt_iter=5, bandwidth=10, small_grad_th=1e-3, tb_folder="tb_logs", tb_log_flag=True, hparams_dict_in=None, run_name="", log_interval=200, disable_logging=False, clip_grad_norm_to=None):
     """given a function and a starting vector, run one of different pox optimizations"""
     if disable_logging:
         logger.disabled = True
@@ -55,7 +55,6 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     if max_opt_iter <=5:
         tb_log_flag = False
 
-    logger.info(f"saving to {tb_folder}")
   
     if isinstance(unParIn, list):
         unPar = unParIn # [par for par in unParIn if par is not None]
@@ -81,10 +80,10 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
     if hparams_dict_in is not None:
         hparams_dict.update(hparams_dict_in)
 
-    logger.info(f"starting optimization with {opt_info_str}")
-    logger.info(f"initial f val = {obj_fun_()}")
 
+    tb_log_str = "not saving tb logss"
     if tb_log_flag:
+        tb_log_str = f"saving to tb logs to {tb_folder}"
 
         full_name = Path(tb_folder) / opt_info_str
 
@@ -92,6 +91,7 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
 
     optimizer = optimizers[opt_n]
 
+    logger.info(f"OPT START: {opt_info_str}, INIT LOSS = {obj_fun_()}, {tb_log_str}")
 
     def closure():
         optimizer.zero_grad()
@@ -162,12 +162,9 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
 
 
     assert torch.isfinite(loss), f"loss is {loss}"
-    logger.info(f"Opt terminated  no_improv_flag = {no_improv_flag} ,  small_grad_flag = {small_grad_flag} , nan_flag = {nan_flag}")
 
 
-    logger.info(f"opt parameters : {hparams_dict}")
     final_loss = closure()
-    logger.info(f"final loss {final_loss.item()}")
     if tb_log_flag:
         metric_dict = {"final_loss" :loss.item()}
         writer.add_hparams(hparams_dict, metric_dict)
@@ -178,6 +175,9 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
 
     # add prefix to dict keys
     hparams_dict = {f"{key}": val for key, val in hparams_dict.items()}
+
+    logger.info(f"OPT TERMINATED {hparams_dict}. FINAL LOSS={final_loss.item()} EXIT FLAGS:  no_improv_flag = {no_improv_flag} ,  small_grad_flag = {small_grad_flag} , nan_flag = {nan_flag}, {opt_metrics}")
+
 
     return optimizer, hparams_dict, opt_metrics
 
