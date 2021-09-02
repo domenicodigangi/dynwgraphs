@@ -416,7 +416,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         if T_train is not None:
             self.T_train = int(T_train)
             if self.T_train == self.T_all:
-                raise Exception("use T_train = None if using whole smaple")
+                pass
+                # raise Exception("use T_train = None if using whole smaple")
         else:
             self.T_train = self.T_all
 
@@ -447,9 +448,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.identif_multi_par = ""
         self.check_id_required()
         
-        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-6, "clip_grad_norm_to": 1e4, "log_interval": 100}
+        self.opt_options_ss_t = {"opt_n": "ADAMHD", "max_opt_iter" :1000, "lr" :0.01, "disable_logging": True, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4, "log_interval": 100}
 
-        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-6, "clip_grad_norm_to": 1e4, "log_interval": 100}
+        self.opt_options_ss_seq = {"opt_n" :"ADAMHD", "max_opt_iter" :15000, "lr" :0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4, "log_interval": 100}
 
         if max_opt_iter is not None:
             self.opt_options_ss_seq["max_opt_iter"] = max_opt_iter
@@ -478,7 +479,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 elif type(self.beta_tv[0]) == torch.Tensor:
                     assert type(self.beta_tv[0].item()) == bool
                 else:
-                    raise TypeError()
+                    raise TypeError(self.beta_tv)
             else:
                 raise TypeError()
         
@@ -486,7 +487,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             if type(self.phi_tv) == bool:
                 pass
             else:
-                raise TypeError()
+                raise TypeError(self.phi_tv)
         
         if self.dist_par_tv is not None:
             if type(self.dist_par_tv) == bool:
@@ -516,10 +517,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         if type(tv_flag) == str:
             return bool(eval(tv_flag))
         elif tv_flag in [True, False]:
-            return tv_flag
-        elif tv_flag == 1:
+            return bool(tv_flag)
+        elif tv_flag in [1, 1.0]:
             return True
-        elif tv_flag == 0:
+        elif tv_flag in [0, 0.0]:
             return False
         else:
             raise TypeError()
@@ -684,10 +685,11 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def get_n_par(self):
         n_par = 0
 
-        if self.phi_tv:
-            n_par += self.phi_T[0].numel() * len(self.phi_T)
-        else:
-            n_par += self.phi_T[0].numel()
+        if self.phi_T is not None:
+            if self.phi_tv:
+                n_par += self.phi_T[0].numel() * len(self.phi_T)
+            else:
+                n_par += self.phi_T[0].numel()
 
         if self.dist_par_un_T is not None:
             if self.dist_par_tv:
@@ -910,7 +912,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         _, _, beta_T = self.get_time_series_latent_par()
         if x is None:
             x = np.array(range(self.T_all))
-        n_beta = beta_T.shape[2]
+        n_beta = beta_T.shape[1]
         if fig_ax is None:
             fig, ax = plt.subplots(n_beta,1)
         else:
@@ -918,9 +920,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         if n_beta == 1:
             if self.any_beta_tv():
-                ax.plot(x, beta_T[:,:,0].T)
-            else:
-                ax.plot(x, beta_T[:,0,0])
+                ax.plot(x, beta_T[:,0,:].T)
         else:
             for i in range(n_beta):
                 ax[i].plot(x, beta_T[:,:,i].T)
@@ -1190,9 +1190,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     __max_value_A = 30
     __max_value_B = 1
     __B0 = torch.ones(1) * 0.98
-    __A0 = torch.ones(1) * 0.001
-    __A0_beta = torch.ones(1) * 0.001
-    __max_score_rescaled_val =  20
+    __A0 = torch.ones(1) * 0.0001
+    __A0_beta = torch.ones(1) * 1e-12
+    __max_score_rescaled_val =  30
 
 
     def __init__(self, Y_T, init_sd_type = "est_ss_before", rescale_SD = True, **kwargs ):
@@ -1200,7 +1200,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         
         super().__init__(Y_T, **kwargs)
         
-        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-6, "clip_grad_norm_to": 1e4, "log_interval": 100}
+        self.opt_options_sd = {"opt_n": "ADAMHD", "max_opt_iter": 15000, "lr": 0.01, "rel_improv_tol": 1e-7, "clip_grad_norm_to": 1e4, "log_interval": 100}
         if "max_opt_iter" in kwargs.keys():
             self.opt_options_sd["max_opt_iter"] = kwargs["max_opt_iter"]
         if "opt_n" in kwargs.keys():
@@ -1414,6 +1414,13 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
                         self.init_one_set_sd_par(self.sd_stat_par_un_dist_par_un, self.mod_for_init.dist_par_un_T[0])
                     else: 
                         self.dist_par_un_T[0] = nn.parameter.Parameter(self.mod_for_init.dist_par_un_T[0])
+                        
+                if self.mod_for_init.beta_T is not None:
+                    if self.beta_T is not None:
+                        if self.any_beta_tv():
+                            self.init_one_set_sd_par(self.sd_stat_par_un_beta, self.mod_for_init.beta_T[0])
+                        else: 
+                            self.beta_T[0] = nn.parameter.Parameter(self.mod_for_init.beta_T[0])
 
         
         self.roll_sd_filt_train()
@@ -1576,12 +1583,13 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
     def get_n_par(self):
         n_par = 0
-        if self.phi_tv:
-            n_par += self.sd_stat_par_un_phi["w"].numel()
-            n_par += self.sd_stat_par_un_phi["B"].numel()
-            n_par += self.sd_stat_par_un_phi["A"].numel()
-        else:
-            n_par += self.phi_T[0].numel()
+        if self.phi_T is not None:
+            if self.phi_tv:
+                n_par += self.sd_stat_par_un_phi["w"].numel()
+                n_par += self.sd_stat_par_un_phi["B"].numel()
+                n_par += self.sd_stat_par_un_phi["A"].numel()
+            else:
+                n_par += self.phi_T[0].numel()
 
         if self.dist_par_un_T is not None:
             if self.dist_par_tv:
@@ -1900,10 +1908,11 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         #get a model without regressor and with static parameters
         kwargs["phi_tv"] = False
         kwargs["dist_par_tv"] = False
+        kwargs["beta_tv"] = False
         
-        kwargs.pop("X_T", None)
-        kwargs.pop("size_beta_t", None)
-        kwargs.pop("beta_tv", None)
+        # kwargs.pop("X_T", None)
+        # kwargs.pop("size_beta_t", None)
+        # kwargs.pop("beta_tv", None)
         
         kwargs = self.remove_sd_specific_keys(kwargs)
 
@@ -2188,11 +2197,14 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
 
     def get_mod_for_init(self, Y_T, **kwargs):
+      
         kwargs["phi_tv"] = False
         kwargs["dist_par_tv"] = False
-        kwargs.pop("X_T", None)
-        kwargs.pop("size_beta_t", None)
-        kwargs.pop("beta_tv", None)
+        kwargs["beta_tv"] = False
+      
+        # kwargs.pop("X_T", None)
+        # kwargs.pop("size_beta_t", None)
+        # kwargs.pop("beta_tv", None)
         
         kwargs = self.remove_sd_specific_keys(kwargs)
 
