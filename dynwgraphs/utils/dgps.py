@@ -190,6 +190,9 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
 
             # sample reg coeff
             beta_dgp_type, unc_mean_beta, B_beta, sigma_beta = dgp_set_dict["beta_set_dgp_type_tv"]
+            if n == 2:
+                unc_mean_beta = kwargs["beta_set_dgp_type_tv_un_mean_2"]
+
             if unc_mean_beta is None:
                 unc_mean_beta = 1 + torch.randn(size_beta_t, 1)
                 if unc_mean_beta.shape[0] != size_beta_t:
@@ -242,7 +245,7 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
 
         mod_dgp = dirSpW1_sequence_ss(torch.zeros(N, N, T), X_T=X_T, size_phi_t=size_phi_t, phi_tv=phi_tv, beta_tv=beta_tv, size_beta_t=size_beta_t, T_train=T_train) 
 
-    mod_dgp.inds_to_exclude_from_id
+    mod_dgp.inds_never_obs_w
     mod_dgp.phi_T = phi_T_dgp
     mod_dgp.beta_T = beta_T_dgp
     mod_dgp.dist_par_un_T = dist_par_un_T_dgp
