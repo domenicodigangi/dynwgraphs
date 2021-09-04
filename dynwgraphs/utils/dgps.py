@@ -190,8 +190,8 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict,  Y_reference=None):
 
             # sample reg coeff
             beta_dgp_type, unc_mean_beta, B_beta, sigma_beta = dgp_set_dict["beta_set_dgp_type_tv"]
-            if n == 2:
-                unc_mean_beta = kwargs["beta_set_dgp_type_tv_un_mean_2"]
+            if n == 1:
+                unc_mean_beta = dgp_set_dict["beta_set_dgp_type_tv_un_mean_2"]
 
             if unc_mean_beta is None:
                 unc_mean_beta = 1 + torch.randn(size_beta_t, 1)
