@@ -1879,27 +1879,25 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
         A_t = tens(A_t_bool)
         
         score_dict = {}
-        if  dist_par_un_flag | beta_flag:
+        if  dist_par_un_flag :
             
             # compute the score with AD using Autograd
             like_t = self.loglike_t(Y_t, phi_t, beta=beta_t, X_t=X_t, dist_par_un=dist_par_un_t)
             # TODO Add the analytical gradient for beta and dist_par_un KEEPin MIND the ovflw limit for dist_par_un  
-            if beta_flag:
-                score_dict["beta"] = grad(like_t, beta_t, create_graph=True)[0]
             if dist_par_un_flag:
                 score_dict["dist_par_un"] = grad(like_t, dist_par_un_t, create_graph=True)[0]
             if rescale_flag:
-                pass
-                # raise "Rescaling not ready for beta and dist par"
+                raise "Rescaling not ready for beta and dist par"
+                # pass
         
-        if phi_flag:
+        if phi_flag | beta_flag:
             sigma_mat = self.link_dist_par(dist_par_un_t, self.N)
             log_cond_exp_Y, log_cond_exp_Y_restr, cond_exp_Y = self.exp_of_fit_plus_reg(phi_t, beta=beta_t, X_t=X_t, ret_all=True)
 
             if self.distr == 'gamma':
                 tmp = (Y_t.clone()/cond_exp_Y - A_t)*sigma_mat
                 if rescale_flag:
-                    diag_resc_mat = sigma_mat*A_t
+                    resc_mat = sigma_mat*Y_t.clone()/cond_exp_Y 
 
             elif self.distr == 'lognormal':
                 sigma2_mat = sigma_mat**2
@@ -1907,7 +1905,8 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
                 log_Y_t[A_t_bool] = Y_t[A_t_bool].log()
                 tmp = (log_Y_t - log_cond_exp_Y_restr*A_t)/sigma2_mat + A_t/2
                 if rescale_flag:
-                    diag_resc_mat = (sigma_mat**2)**A_t
+                    resc_mat = (sigma_mat**2)#**Y_t.clone() 
+                    raise Exception('need to compute and update rescaling matrix ')
 
             if self.avoid_ovflw_fun_flag:
                 L = self.ovflw_exp_L_limit
@@ -1916,17 +1915,23 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
                 soft_bnd_der_mat = (1 - torch.tanh(2*((log_cond_exp_Y - L)/(L - U)) + 1)**2)
                 tmp = soft_bnd_der_mat * tmp
                 if rescale_flag:
-                    diag_resc_mat = diag_resc_mat * (soft_bnd_der_mat**2)
+                    resc_mat = resc_mat * (soft_bnd_der_mat**2)
 
-            score_phi = strIO_from_mat(tmp)
+            if beta_flag:
+                raise "need to double check, rescale and update binary one"
+                score_dict["beta"] = (tmp * X_t).sum()
 
-            #rescale score if required
-            if rescale_flag:
-                diag_resc = strIO_from_mat(diag_resc_mat)
-                diag_resc[diag_resc==0] = 1
-                score_phi = score_phi/diag_resc.sqrt()
 
-            score_dict["phi"] = score_phi
+            if phi_flag:
+                score_phi = strIO_from_mat(tmp)
+
+                #rescale score if required
+                if rescale_flag:
+                    diag_resc = torch.diag(resc_mat)
+                    diag_resc[diag_resc==0] = 1
+                    score_phi = score_phi/diag_resc.sqrt()
+
+                score_dict["phi"] = score_phi
 
         return score_dict
 
@@ -2197,7 +2202,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
             tmp = A_t - exp_A
 
             if rescale_flag:
-                diag_resc_mat = exp_A * (1 - exp_A)
+                resc_mat = exp_A * (1 - exp_A)
 
             if self.avoid_ovflw_fun_flag:
                 log_inv_pi__mat = self.invPiMat(phi_t, beta=beta_t, X_t=X_t, ret_log=True)
@@ -2207,13 +2212,13 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
                 soft_bnd_der_mat = (1 - torch.tanh(2*((log_inv_pi__mat - L)/(L - U)) + 1)**2)
                 tmp = soft_bnd_der_mat * tmp
                 if rescale_flag:
-                    diag_resc_mat = diag_resc_mat * (soft_bnd_der_mat**2)
+                    resc_mat = resc_mat * (soft_bnd_der_mat**2)
 
             score_phi = strIO_from_mat(tmp)
      
             #rescale score if required
             if rescale_flag:
-                diag_resc = torch.cat((diag_resc_mat.sum(dim=0), diag_resc_mat.sum(dim=1)))
+                diag_resc = torch.cat((resc_mat.sum(dim=0), resc_mat.sum(dim=1)))
                 diag_resc[diag_resc==0] = 1
                 score_phi = score_phi/diag_resc.sqrt()
 
