@@ -38,6 +38,9 @@ def strIO_from_mat(Y):
 def strIO_from_tens_T(Y_T):
     return torch.cat((torch.sum(Y_T, dim=(0,2)), torch.sum(Y_T, dim=(1,2))))
 
+def strIO_T_from_tens_T(Y_T):
+    return strIO_from_mat(Y_T)
+
 def putZeroDiag(mat, diff=True):
     n = mat.shape[0]
     mask = torch.eye(n, n).bool()
