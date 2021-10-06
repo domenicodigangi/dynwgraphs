@@ -54,7 +54,7 @@ class dirGraphs_funs(nn.Module):
         self.ovflw_exp_L_limit = -30
         self.ovflw_exp_U_limit = 30
         self.par_vec_id_type = par_vec_id_type
-        self.obs_type = "continuous_positive"
+        self.obs_type = ""
 
 
     def check_reg_and_coeff_pres(self, X, beta):
@@ -143,6 +143,20 @@ class dirGraphs_funs(nn.Module):
     def exp_Y(self, phi, beta, X_t):
         pass
 
+
+    def exp_Y_T(self, phi_T, beta_T, X_T):
+        T = phi_T.shape[1]
+        Y_T = torch.zeros(self.N, self.N, T)
+        for t in range(T):
+            if beta_T is None:
+                beta_t = None
+            if X_T is None:
+                X_t = None
+
+            Y_T[:, :, t] = self.exp_Y(phi_T[:, t], beta_t, X_t)
+        return Y_T
+
+
     def set_elements_from_par_tens_to(self, inds, val, par_tens):
         if par_tens.dim() == 1:
                 return torch.where(inds, val, par_tens)
@@ -165,12 +179,12 @@ class dirGraphs_funs(nn.Module):
         return torch.cat((par_tens_i, par_tens_o))
 
 
-    def identify_io_par_to_be_sum(self, par_vec, id_type, inds_to_excl=None):
+    def identify_io_par_to_be_sum(self, par_vec, id_type, inds_to_excl=None, ind_to_zero=0):
         """ enforce an identification condition on input and output parameters that are going to enter the pdf always as par_in_i + par_out_j 
         """
         # set the first in parameter to zero
         if inds_to_excl is not None:
-            if id_type == "first_in_zero":
+            if id_type == "set_ind_to_zero":
                 if inds_to_excl[0] == True:
                     raise Exception("cannot set first to zero and exclude it from identification as well")
                 elif inds_to_excl[0] == False:
@@ -184,9 +198,9 @@ class dirGraphs_funs(nn.Module):
           
         par_vec_i, par_vec_o = splitVec(par_vec)
 
-        if id_type == "first_in_zero":
+        if id_type == "set_ind_to_zero":
             """set one to zero"""
-            d = par_vec_i[0]
+            d = par_vec_i[ind_to_zero]
         elif id_type == "in_sum_eq_out_sum":
             """set sum of in parameters equal to sum of out par """
             d = (par_vec_i.mean() - par_vec_o.mean())/2
@@ -345,7 +359,7 @@ class dirGraphs_funs(nn.Module):
         return Z_t
     
 
-    def sample_Y_T_from_par_list(self, T, phi_T, beta_T=None, X_T=None, dist_par_un_T=None, avoid_empty=True, A_T=None):
+    def sample_Y_T_from_par_list(self, T, phi_T, beta_T=None, X_T=None, dist_par_un_T=None, avoid_empty=True, A_T=None, use_lag_mat_as_reg=False):
 
         if beta_T is not None:
             beta_tv = len(beta_T)>1
@@ -355,7 +369,7 @@ class dirGraphs_funs(nn.Module):
         N = self.N
         Y_T_sampled = torch.zeros(N, N, T)
         if phi_T is not None:
-            phi_tv = len(phi_T) >1
+            phi_tv = len(phi_T) > 1
         else:
             phi_tv = None
         if dist_par_un_T is not None:
@@ -363,15 +377,30 @@ class dirGraphs_funs(nn.Module):
         else:
             dist_par_tv = None
 
+        if use_lag_mat_as_reg:
+            logger.warn("Using Lagged matrix instead of X as regressor")
+
+        Y_tm1 = torch.zeros(N, N, 1)
         for t in range(T):
-            X_t = self.get_reg_t_or_none(t, X_T)
+
             phi_t = self.get_t_or_t0(t, phi_tv, phi_T) 
-            beta_t = self.get_t_or_t0(t, beta_tv, beta_T) 
+            beta_t = self.get_t_or_t0(t, beta_tv, beta_T)
             dist_par_un_t = self.get_t_or_t0(t, dist_par_tv, dist_par_un_T) 
+
+            X_t = self.get_reg_t_or_none(t, X_T)
+            # add prev time mat as external regressor with pers par as coeff
+            if use_lag_mat_as_reg:
+                if self.obs_type == "bin":
+                    X_t = Y_tm1
+                elif self.obs_type == "w":
+                    X_t = torch.log(Y_tm1)
+                    X_t[Y_tm1 == 0] = 0
+
             
             dist = self.dist_from_pars(phi_t , beta_t, X_t, dist_par_un=dist_par_un_t)
 
             Y_T_sampled[:, :, t]  = dist.sample()
+            Y_tm1 = Y_T_sampled[:, :, t].unsqueeze(2)
 
         if avoid_empty:
             if A_T is not None:
@@ -394,6 +423,7 @@ class dirGraphs_funs(nn.Module):
 
         if A_T is not None:
             Y_T_sampled[~A_T] = 0
+            
             
         return Y_T_sampled
 
@@ -1053,8 +1083,17 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def sample_Y_T(self):
         pass
 
-    def sample_and_set_Y_T(self, **kwargs):
-        self.Y_T = self.sample_Y_T(**kwargs)
+    def sample_and_set_Y_T(self, use_lag_mat_as_reg=False, **kwargs):
+        self.Y_T = self.sample_Y_T(use_lag_mat_as_reg=use_lag_mat_as_reg, **kwargs)
+        if use_lag_mat_as_reg:
+            lagged_reg_mat = torch.roll(self.Y_T, 1, 2).unsqueeze(2)
+            lagged_reg_mat[:, :, :, 0] = 0
+            if self.obs_type == "w":
+                logY_Tm1 = torch.log(lagged_reg_mat)
+                logY_Tm1[lagged_reg_mat == 0] = 0
+                lagged_reg_mat = logY_Tm1
+
+            self.X_T = lagged_reg_mat
         self.set_inds_never_obs_w()
 
     def get_avg_beta_dict(self):
@@ -1814,11 +1853,11 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
     def get_Y_T_to_save(self):
         return self.Y_T
 
-    def sample_Y_T(self, A_T, avoid_empty=False):
+    def sample_Y_T(self, A_T, avoid_empty=False, use_lag_mat_as_reg=False):
         if A_T.dtype != torch.bool:
             A_T = A_T >0
 
-        return self.sample_Y_T_from_par_list(self.T_all, self.phi_T, X_T = self.X_T, beta_T=self.beta_T, dist_par_un_T=self.dist_par_un_T, avoid_empty=avoid_empty, A_T=A_T)
+        return self.sample_Y_T_from_par_list(self.T_all, self.phi_T, X_T = self.X_T, beta_T=self.beta_T, dist_par_un_T=self.dist_par_un_T, avoid_empty=avoid_empty, A_T=A_T, use_lag_mat_as_reg=use_lag_mat_as_reg)
 
     def info_filter(self):
         return self.model_class + super().info_filter()
@@ -2123,8 +2162,8 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
     def get_Y_T_to_save(self):
         return self.Y_T >0
 
-    def sample_Y_T(self, avoid_empty=True):
-        return self.sample_Y_T_from_par_list(self.T_all, self.phi_T, X_T = self.X_T, beta_T=self.beta_T, dist_par_un_T=self.dist_par_un_T, avoid_empty=avoid_empty)
+    def sample_Y_T(self, avoid_empty=True, use_lag_mat_as_reg=False):
+        return self.sample_Y_T_from_par_list(self.T_all, self.phi_T, X_T = self.X_T, beta_T=self.beta_T, dist_par_un_T=self.dist_par_un_T, avoid_empty=avoid_empty, use_lag_mat_as_reg=use_lag_mat_as_reg)
 
     def info_filter(self):
         return self.model_class + super().info_filter()
