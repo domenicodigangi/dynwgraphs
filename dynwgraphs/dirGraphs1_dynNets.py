@@ -2307,7 +2307,7 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
         mod_for_init = dirBin1_sequence_ss(Y_T, **kwargs)
 
-        mod_for_init.opt_options_ss_seq["max_opt_iter"] = 500
+        mod_for_init.opt_options_ss_seq["max_opt_iter"] = int(torch.min(tens([500, self.opt_options_sd["max_opt_iter"]])).item())
         mod_for_init.opt_options_ss_seq["disable_logging"] = True
 
         return mod_for_init
