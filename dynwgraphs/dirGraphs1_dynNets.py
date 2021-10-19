@@ -25,6 +25,9 @@ from .utils.opt import optim_torch
 from .utils.graph_properties import MatrixSymmetry
 import itertools
 from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_error, mean_absolute_percentage_error, mean_squared_log_error, r2_score
+from sklearn.linear_model import LinearRegression
+from scipy.stats.distributions import chi2
+
 
 from pathlib import Path
 from torch.autograd import grad
@@ -1705,7 +1708,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         pass
 
 
-        
     def get_seq_mod(self):
         mod_args = {"T_train": self.T_train, "X_T": self.X_T, "phi_tv": self.phi_tv, "phi_par_init_type": self.phi_par_init_type, "avoid_ovflw_fun_flag": self.avoid_ovflw_fun_flag, "distr": self.distr, "par_vec_id_type": self.par_vec_id_type, "like_type": self.like_type, "size_phi_t": self.size_phi_t, "size_dist_par_un_t": self.size_dist_par_un_t , "dist_par_tv": self.dist_par_tv, "size_beta_t": self.size_beta_t , "beta_tv": self.beta_tv, "beta_start_val": self.beta_start_val, "data_name": self.data_name}
 
@@ -1713,6 +1715,36 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         mod_ss = get_gen_fit_mod(self.obs_type, "ss", self.Y_T, **mod_args)
 
         return mod_ss
+
+
+    def lm_test_beta(self):
+
+        s_T_resc = self.get_score_T(self.T_train, rescaled=True)
+        s_T = self.get_score_T(self.T_train, rescaled=False)
+        X = s_T["beta"][1:].unsqueeze(1)
+
+        X = torch.cat([X, (s_T["beta"][1:] * s_T_resc["beta"][:-1]).unsqueeze(1)], dim=1)
+
+                
+        phi_T, _, _ = self.get_time_series_latent_par()
+
+        d_dwphi = s_T["phi"][:, 1:] 
+        d_dBphi = s_T["phi"][:, 1:] * phi_T[:, :self.T_train-1]
+        d_dAphi = s_T["phi"][:, 1:] * s_T["phi"][:, :self.T_train-1] 
+
+        X = torch.cat((X, d_dwphi.T), dim = 1)
+        # X = torch.cat((X, d_dBphi.T), dim = 1)
+        # X = torch.cat((X, d_dAphi.T), dim = 1)
+
+        if "distr_par_un" in s_T.keys():
+            X = torch.cat([X, (s_T["distr_par_un"][1:]).unsqueeze(1)], dim=1)
+        
+        y = torch.ones(X.shape[0])
+
+        reg = LinearRegression(fit_intercept=False, normalize=False).fit(X, y)
+        ess = np.sum(np.square(reg.predict(X) - y.numpy().mean()))
+
+        return chi2.sf(ess, 1)
 
 
 # Weighted Graphs
