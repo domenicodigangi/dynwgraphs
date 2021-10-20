@@ -430,7 +430,6 @@ class dirGraphs_funs(nn.Module):
             
         return Y_T_sampled
 
-
 class dirGraphs_sequence_ss(dirGraphs_funs):
     """
     Single snapshot sequence of, binary or weighted, fitness models with external regressors. 
@@ -614,7 +613,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.start_opt_from_current_par = False
 
-
     def set_elements_from_par_seq_to_mean_oth_t(self, par_seq, inds,):
         for t, par_tens in enumerate(par_seq):
             par_seq[t] = self.set_elements_from_par_tens_to_oth_mean_io(par_tens, inds)
@@ -635,7 +633,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 raise Exception("not ready")
             if self.size_dist_par_un_t == 2*self.N:
                 self.set_elements_from_par_seq_to_mean_oth_t(self.beta_T, self.inds_never_obs_w)
-
 
     def get_Y_t(self, t):
         return self.Y_T[:,:,t]
@@ -808,7 +805,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def identify_sequences_tv_par(self):
         self.identify_sequences(id_phi=self.phi_tv, id_beta=self.any_beta_tv(), id_dist_par=self.dist_par_tv)
 
-
     def check_regressors_seq_shape(self):
         """
         check that:
@@ -912,7 +908,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         for phi_t in self.phi_T:
             phi_t.requires_grad = True
-
 
     def plot_phi_T(self, x=None, i=None, fig_ax=None):
         if x is None:
@@ -1110,11 +1105,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             avg_beta_dict = {"avg_beta_1": float('nan')}
         return avg_beta_dict
 
-
     def score_t(self, t, rescale_flag, phi_flag, dist_par_un_flag, beta_flag):
         pass
 
-   
     def get_score_T(self, T, list_par=None, rescaled = False):
         if list_par is None:
             list_par =[]
@@ -1258,7 +1251,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         dic.pop("opt_options_sd", None)
         return dic 
         
-    
     def init_all_stat_par(self, B0_un=None, A0_un=None, max_value_B=None, max_value_A=None):
 
         self.init_all_par_sequences()
@@ -1318,7 +1310,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def re2un_A_par(self, A_re):
         return torch.log(torch.div(A_re, self.max_value_A - A_re))
 
-
     def update_sd_one_tv_par(self, par_t, s, sd_stat_par_un):
         s = torch.clamp(s, min=-self.max_score_rescaled_val, max = self.max_score_rescaled_val)
         w = sd_stat_par_un["w"]
@@ -1328,8 +1319,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         return par_tp1
     
-
-
     def update_sd_all_tv_par(self, t_to_be_updated):
         """
         score driven update of the parameters related with the weights: phi_i phi_o
@@ -1355,7 +1344,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if self.any_beta_tv():
                 self.beta_T[t+1] = self.update_sd_one_tv_par(beta_t, score_dict["beta"], self.sd_stat_par_un_beta)
         
-
     def plot_sd_par(self):
         fig, ax = plt.subplots(3,1)
         ax[0].plot(self.sd_stat_par_un_phi["w"].detach())
@@ -1424,7 +1412,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if k not in keys_to_exclude:
                 par_list.append(v)
   
-
     def init_one_set_sd_par(self, sd_stat_par_un, par_0):
         if par_0 is not None:
             self.set_unc_mean(par_0, sd_stat_par_un)
@@ -1432,7 +1419,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
                 sd_stat_par_un["init_val"] = nn.parameter.Parameter(par_0)
             elif self.init_sd_type == "est_ss_before":
                 sd_stat_par_un["init_val"] = nn.parameter.Parameter(par_0)
-
 
     def init_static_sd_from_obs(self):
 
@@ -1466,7 +1452,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         
         self.roll_sd_filt_train()
-
 
     def info_filter(self):
         return f"sd_init_{self.init_sd_type}_resc_{self.rescale_SD}_"
@@ -1678,7 +1663,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
         return F_A_t
 
-    def get_out_of_sample_obs_and_pred(self, only_present, inds_keep_subset = None):
+    def get_out_of_sample_obs_and_pred(self, only_present, inds_keep_subset = None, steps_ahead=0):
 
         if inds_keep_subset is None:
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
@@ -1686,12 +1671,16 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if only_present:
                 raise
 
+        if steps_ahead == 0:
+            logger.info(f"using all available test obs for out of sample eval")
+            steps_ahead = self.T_all - self.t_test_1
+
         self.roll_sd_filt(self.T_all)
 
         F_Y_vec_all = np.zeros(0)
         Y_vec_all = np.zeros(0)
 
-        for t in range(self.t_test_1, self.T_all): 
+        for t in range(self.t_test_1, self.t_test_1 + steps_ahead): 
             
             Y_t = self.get_Y_t(t)
             Y_vec_t = Y_t.detach().numpy()
@@ -1707,7 +1696,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
     def out_of_sample_eval(self):
         pass
 
-
     def get_seq_mod(self):
         mod_args = {"T_train": self.T_train, "X_T": self.X_T, "phi_tv": self.phi_tv, "phi_par_init_type": self.phi_par_init_type, "avoid_ovflw_fun_flag": self.avoid_ovflw_fun_flag, "distr": self.distr, "par_vec_id_type": self.par_vec_id_type, "like_type": self.like_type, "size_phi_t": self.size_phi_t, "size_dist_par_un_t": self.size_dist_par_un_t , "dist_par_tv": self.dist_par_tv, "size_beta_t": self.size_beta_t , "beta_tv": self.beta_tv, "beta_start_val": self.beta_start_val, "data_name": self.data_name}
 
@@ -1715,7 +1703,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         mod_ss = get_gen_fit_mod(self.obs_type, "ss", self.Y_T, **mod_args)
 
         return mod_ss
-
 
     def lm_test_beta(self):
 
@@ -1981,8 +1968,6 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
         return score_dict
 
-
-    
 class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
 
@@ -2012,13 +1997,12 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         
         return mod_for_init
 
-
-    def out_of_sample_eval(self, exclude_never_obs_train=True):
+    def out_of_sample_eval(self, exclude_never_obs_train=True, steps_ahead=0):
  
         if not exclude_never_obs_train:
             raise
 
-        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=True)
+        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=True, steps_ahead=steps_ahead)
 
         eval_dict = { "mse":mean_squared_error(Y_vec_all, F_Y_vec_all),
             "mse_log":mean_squared_log_error(Y_vec_all, F_Y_vec_all),
@@ -2027,7 +2011,6 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
             "r2_score":r2_score(Y_vec_all, F_Y_vec_all)}
         
         return eval_dict
-
 
     def info_filter(self):
         return self.model_class + super().info_filter()
@@ -2278,7 +2261,6 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
 
     
         return score_dict
-
 class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
     def __init__(self, Y_T, **kwargs): 
@@ -2290,7 +2272,6 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         self.check_mat_is_bin()
 
         self.mod_for_init = self.get_mod_for_init(Y_T, **kwargs)
-
 
 
     def get_mod_for_init(self, Y_T, **kwargs):
@@ -2311,18 +2292,15 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
         mod_for_init.opt_options_ss_seq["disable_logging"] = True
 
         return mod_for_init
-
-
-  
+ 
    
-   
-    def out_of_sample_eval(self, exclude_never_obs_train=True):
+    def out_of_sample_eval(self, exclude_never_obs_train=True, steps_ahead=0):
         if exclude_never_obs_train:
             inds_keep_subset = self.get_train_Y_T().sum(dim=(2)) > 0
         else:
             inds_keep_subset = None
 
-        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=False, inds_keep_subset=inds_keep_subset)
+        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=False, inds_keep_subset=inds_keep_subset, steps_ahead=steps_ahead)
         logger.info(f"out of sample eval on {Y_vec_all.size} observations")
         auc_score = roc_auc_score(Y_vec_all, F_Y_vec_all)
         return {"auc_score":auc_score}
