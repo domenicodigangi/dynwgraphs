@@ -27,6 +27,7 @@ import itertools
 from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_error, mean_absolute_percentage_error, mean_squared_log_error, r2_score
 from sklearn.linear_model import LinearRegression
 from scipy.stats.distributions import chi2
+from statsmodels.tsa.ar_model import AutoReg
 
 
 from pathlib import Path
@@ -1210,7 +1211,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         return V
 
-    def get_forecast(self, t, steps_ahead=1):
+    def get_flat_forecast(self, t, steps_ahead=1):
         
         phi_t, dist_par_un_t, beta_t = self.get_par_t(t-steps_ahead)
         X_t = self.get_X_t(t)
@@ -1218,7 +1219,33 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
         return F_A_t
 
-    def get_obs_and_pred(self, only_present, t_start, t_end, inds_keep_subset = None, steps_ahead=0):
+    def get_AR_forecast(self, t, steps_ahead=1, AR_type="AR_1"):
+        
+        phi_T, dist_par_un_T, beta_T = self.get_time_series_latent_par()
+
+        t_init = t-steps_ahead 
+
+        phi_fore = np.zeros((phi_T.shape[0], steps_ahead))
+        order_AR = int(AR_type[3:])
+
+        for i in range(phi_T.shape[0]):
+            phi_i_T = phi_T[i, :t_init].numpy()
+            armod = AutoReg(phi_i_T, order_AR, old_names=False)
+            res = armod.fit()
+
+            phi_fore[i, :] = res.predict(start=T, end=T+steps_ahead-1)
+
+        
+        phi_t, dist_par_un_t, beta_t = self.get_par_t(t-steps_ahead)
+        X_t = self.get_X_t(t)
+        
+        F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
+        return F_A_t
+
+
+
+
+    def get_obs_and_pred(self, only_present, t_start, t_end, inds_keep_subset = None, steps_ahead=0, forecast_type = "flat"):
 
         if inds_keep_subset is None:
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
@@ -1237,7 +1264,12 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             
             Y_t = self.get_Y_t(t)
             Y_vec_t = Y_t.detach().numpy()
-            F_Y_vec_t = self.get_forecast(t, steps_ahead=steps_ahead).detach().numpy()
+            if forecast_type == "flat":
+                F_Y_vec_t = self.get_flat_forecast(t, steps_ahead=steps_ahead).detach().numpy()
+            elif forecast_type.startswith("AR"):
+                F_Y_vec_t = self.get_AR_forecast(t, steps_ahead=steps_ahead, AR_type=forecast_type).detach().numpy()
+            else:
+                raise Exception("unrecognized forecast type")
 
             if only_present:
                 inds_keep_subset = Y_t>0            
@@ -1685,7 +1717,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         super().load_par(load_path)
         self.roll_sd_filt_train()
 
-    def get_forecast(self, t, steps_ahead=1):
+    def get_SD_forecast(self, t, steps_ahead=1):
 
         assert steps_ahead == 1, "Not ready for multi step ahead sd forecast"
         if t<= self.T_train:
@@ -1716,7 +1748,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             
             Y_t = self.get_Y_t(t)
             Y_vec_t = Y_t.detach().numpy()
-            F_Y_vec_t = self.get_forecast(t, steps_ahead=steps_ahead).detach().numpy()
+            F_Y_vec_t = self.get_SD_forecast(t, steps_ahead=steps_ahead).detach().numpy()
 
             if only_present:
                 inds_keep_subset = Y_t>0            
@@ -1761,6 +1793,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         ess = np.sum(np.square(reg.predict(X) - y.numpy().mean()))
 
         return chi2.sf(ess, 1)
+
 
 
 # Weighted Graphs
@@ -2324,7 +2357,6 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
         self.mod_for_init = self.get_mod_for_init(Y_T, **kwargs)
 
-
     def get_mod_for_init(self, Y_T, **kwargs):
       
         kwargs["phi_tv"] = False
@@ -2349,7 +2381,6 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
         
 # utils functions
-
 
 def remove_w_specific_keys(dic):
         dic.pop("size_dis_parun_t", None)
