@@ -1071,10 +1071,6 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         self.par_dict_to_save = dict
         self.start_opt_from_current_par = True
 
-    def out_of_sample_eval(self):
-        logger.warn(f"Out of sample eval for ss sequences not ready. returning ")
-        return {"auc_score":0}
-
     def set_inds_never_obs_w(self):
         pass
 
@@ -1213,6 +1209,44 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         V = torch.mm(-torch.inverse(A), torch.mm(B ,(-torch.inverse(A))))
 
         return V
+
+    def get_forecast(self, t, steps_ahead=1):
+        
+        phi_t, dist_par_un_t, beta_t = self.get_par_t(t-steps_ahead)
+        X_t = self.get_X_t(t)
+        
+        F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
+        return F_A_t
+
+    def get_obs_and_pred(self, only_present, t_start, t_end, inds_keep_subset = None, steps_ahead=0):
+
+        if inds_keep_subset is None:
+            inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
+        else:
+            if only_present:
+                raise
+
+        if steps_ahead == 0:
+            logger.error(f"using contemporaneous parameters for prediction")
+           
+        
+        F_Y_vec_all = np.zeros(0)
+        Y_vec_all = np.zeros(0)
+
+        for t in range(t_start, t_end): 
+            
+            Y_t = self.get_Y_t(t)
+            Y_vec_t = Y_t.detach().numpy()
+            F_Y_vec_t = self.get_forecast(t, steps_ahead=steps_ahead).detach().numpy()
+
+            if only_present:
+                inds_keep_subset = Y_t>0            
+            Y_vec_all = np.append(Y_vec_all, Y_vec_t[inds_keep_subset])
+            F_Y_vec_all = np.append(F_Y_vec_all, F_Y_vec_t[inds_keep_subset])
+            
+        return Y_vec_all, F_Y_vec_all
+
+
 
 class dirGraphs_SD(dirGraphs_sequence_ss):
     """
@@ -1651,7 +1685,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         super().load_par(load_path)
         self.roll_sd_filt_train()
 
-    def get_forecast(self, t):
+    def get_forecast(self, t, steps_ahead=1):
+
+        assert steps_ahead == 1, "Not ready for multi step ahead sd forecast"
         if t<= self.T_train:
             logger.error(f"Should forecast time steps not in the train set T_train {self.T_train}, required {t}")
             raise
@@ -1663,7 +1699,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
         return F_A_t
 
-    def get_out_of_sample_obs_and_pred(self, only_present, inds_keep_subset = None, steps_ahead=0):
+    def get_obs_and_pred(self, only_present, t_start, t_end, inds_keep_subset = None, steps_ahead=1):
 
         if inds_keep_subset is None:
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
@@ -1671,20 +1707,16 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             if only_present:
                 raise
 
-        if steps_ahead == 0:
-            logger.info(f"using all available test obs for out of sample eval")
-            steps_ahead = self.T_all - self.t_test_1
-
         self.roll_sd_filt(self.T_all)
 
         F_Y_vec_all = np.zeros(0)
         Y_vec_all = np.zeros(0)
 
-        for t in range(self.t_test_1, self.t_test_1 + steps_ahead): 
+        for t in range(t_start, t_end): 
             
             Y_t = self.get_Y_t(t)
             Y_vec_t = Y_t.detach().numpy()
-            F_Y_vec_t = self.get_forecast(t).detach().numpy()
+            F_Y_vec_t = self.get_forecast(t, steps_ahead=steps_ahead).detach().numpy()
 
             if only_present:
                 inds_keep_subset = Y_t>0            
@@ -1692,9 +1724,6 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             F_Y_vec_all = np.append(F_Y_vec_all, F_Y_vec_t[inds_keep_subset])
             
         return Y_vec_all, F_Y_vec_all
-
-    def out_of_sample_eval(self):
-        pass
 
     def get_seq_mod(self):
         mod_args = {"T_train": self.T_train, "X_T": self.X_T, "phi_tv": self.phi_tv, "phi_par_init_type": self.phi_par_init_type, "avoid_ovflw_fun_flag": self.avoid_ovflw_fun_flag, "distr": self.distr, "par_vec_id_type": self.par_vec_id_type, "like_type": self.like_type, "size_phi_t": self.size_phi_t, "size_dist_par_un_t": self.size_dist_par_un_t , "dist_par_tv": self.dist_par_tv, "size_beta_t": self.size_beta_t , "beta_tv": self.beta_tv, "beta_start_val": self.beta_start_val, "data_name": self.data_name}
@@ -1760,8 +1789,6 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
             logger.warning("All parameters would be ignored. Assuming that this is a test model and setting inds_never_obs_w = None")
             self.inds_never_obs_w = None
         
-                        
-
     def exp_Y(self, phi, beta, X_t):
         return self.exp_of_fit_plus_reg(phi, beta=beta, X_t=X_t)
 
@@ -1881,7 +1908,6 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
     def info_filter(self):
         return self.model_class + super().info_filter()
 
-
     def score_t(self, t, rescale_flag, phi_flag, dist_par_un_flag, beta_flag):
 
         """
@@ -1968,6 +1994,29 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
         return score_dict
 
+    def out_of_sample_eval(self, t_start=None, t_end=None, exclude_never_obs_train=True, steps_ahead=0):
+ 
+        if not exclude_never_obs_train:
+            raise
+        
+        if t_start is None:
+            t_start = self.t_test_1
+        
+        if t_end is None:
+            logger.info(f"using all available test obs for out of sample eval")
+            t_end = self.T_all
+
+
+        Y_vec_all, F_Y_vec_all = self.get_obs_and_pred(True, t_start, t_end, steps_ahead=steps_ahead)
+
+        eval_dict = { "mse":mean_squared_error(Y_vec_all, F_Y_vec_all),
+            "mse_log":mean_squared_log_error(Y_vec_all, F_Y_vec_all),
+            "mae":mean_absolute_error(Y_vec_all, F_Y_vec_all),
+            "mae_pct":mean_absolute_percentage_error(Y_vec_all, F_Y_vec_all),
+            "r2_score":r2_score(Y_vec_all, F_Y_vec_all)}
+        
+        return eval_dict
+
 class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
 
@@ -1976,8 +2025,6 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         super().__init__(Y_T, **kwargs)
 
         self.mod_for_init = self.get_mod_for_init(Y_T, **kwargs)
-
-    
 
     def get_mod_for_init(self, Y_T, **kwargs):
         #get a model without regressor and with static parameters
@@ -1996,21 +2043,6 @@ class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
         mod_for_init.opt_options_ss_seq["disable_logging"] = True
         
         return mod_for_init
-
-    def out_of_sample_eval(self, exclude_never_obs_train=True, steps_ahead=0):
- 
-        if not exclude_never_obs_train:
-            raise
-
-        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=True, steps_ahead=steps_ahead)
-
-        eval_dict = { "mse":mean_squared_error(Y_vec_all, F_Y_vec_all),
-            "mse_log":mean_squared_log_error(Y_vec_all, F_Y_vec_all),
-            "mae":mean_absolute_error(Y_vec_all, F_Y_vec_all),
-            "mae_pct":mean_absolute_percentage_error(Y_vec_all, F_Y_vec_all),
-            "r2_score":r2_score(Y_vec_all, F_Y_vec_all)}
-        
-        return eval_dict
 
     def info_filter(self):
         return self.model_class + super().info_filter()
@@ -2261,6 +2293,25 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
 
     
         return score_dict
+
+    def out_of_sample_eval(self, t_start=None, t_end=None, exclude_never_obs_train=True, steps_ahead=0):
+        if exclude_never_obs_train:
+            inds_keep_subset = self.get_train_Y_T().sum(dim=(2)) > 0
+        else:
+            inds_keep_subset = None
+
+        if t_start is None:
+            t_start = self.t_test_1
+        
+        if t_end is None:
+            logger.info(f"using all available test obs for out of sample eval")
+            t_end = self.T_all
+
+        Y_vec_all, F_Y_vec_all = self.get_obs_and_pred(False, t_start, t_end, inds_keep_subset=inds_keep_subset, steps_ahead=steps_ahead)
+        logger.info(f"out of sample eval on {Y_vec_all.size} observations")
+        auc_score = roc_auc_score(Y_vec_all, F_Y_vec_all)
+        return {"auc_score":auc_score}
+
 class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
     def __init__(self, Y_T, **kwargs): 
@@ -2293,18 +2344,6 @@ class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
         return mod_for_init
  
-   
-    def out_of_sample_eval(self, exclude_never_obs_train=True, steps_ahead=0):
-        if exclude_never_obs_train:
-            inds_keep_subset = self.get_train_Y_T().sum(dim=(2)) > 0
-        else:
-            inds_keep_subset = None
-
-        Y_vec_all, F_Y_vec_all = self.get_out_of_sample_obs_and_pred(only_present=False, inds_keep_subset=inds_keep_subset, steps_ahead=steps_ahead)
-        logger.info(f"out of sample eval on {Y_vec_all.size} observations")
-        auc_score = roc_auc_score(Y_vec_all, F_Y_vec_all)
-        return {"auc_score":auc_score}
-
     def info_filter(self):
         return self.model_class + super().info_filter()
 
