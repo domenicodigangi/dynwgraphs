@@ -23,6 +23,7 @@ from matplotlib import pyplot as plt
 from .utils.tensortools import splitVec, tens, putZeroDiag, putZeroDiag_T, soft_lu_bound, strIO_from_mat, strIO_from_tens_T, size_from_str
 from .utils.opt import optim_torch
 from .utils.graph_properties import MatrixSymmetry
+from .utils.data import cluster_2_and_fill_less_freq
 import itertools
 from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_error, mean_absolute_percentage_error, mean_squared_log_error, r2_score
 from sklearn.linear_model import LinearRegression
@@ -498,6 +499,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         self.check_types()
         self.inds_never_obs_w = None
+
+        self.forecast_type = "flat"
+
 
 
   
@@ -1213,39 +1217,36 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def get_flat_forecast(self, t, steps_ahead=1):
         
-        phi_t, dist_par_un_t, beta_t = self.get_par_t(t-steps_ahead)
-        X_t = self.get_X_t(t)
-        
-        F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
-        return F_A_t
+        phi_fore_t, dist_par_un_t, beta_t = self.get_par_t(t-steps_ahead)
 
-    def get_AR_forecast(self, t, steps_ahead=1, AR_type="AR_1"):
+        return phi_fore_t
+
+    def get_AR_forecast(self, t_0_ar_train, t_end_ar_train, steps_ahead=1, AR_type="AR_1", treat_missing_links=True):
         
         phi_T, dist_par_un_T, beta_T = self.get_time_series_latent_par()
 
-        t_init = t-steps_ahead 
-
+        T = t_end_ar_train - t_0_ar_train
+        
         phi_fore = np.zeros((phi_T.shape[0], steps_ahead))
         order_AR = int(AR_type[3:])
 
         for i in range(phi_T.shape[0]):
-            phi_i_T = phi_T[i, :t_init].numpy()
-            armod = AutoReg(phi_i_T, order_AR, old_names=False)
-            res = armod.fit()
+            phi_i_T = phi_T[i, t_0_ar_train:t_end_ar_train].numpy()
+            if treat_missing_links:
+                phi_i_T = cluster_2_and_fill_less_freq(phi_i_T.reshape(-1, 1))
+            
+            try:
+                armod = AutoReg(phi_i_T, order_AR, old_names=False)
+                res = armod.fit()
+                phi_fore[i, :] = res.predict(start=T, end=T+steps_ahead-1)
+            except: 
+                print(phi_i_T)
+                raise
 
-            phi_fore[i, :] = res.predict(start=T, end=T+steps_ahead-1)
-
-        
-        phi_t, dist_par_un_t, beta_t = self.get_par_t(t-steps_ahead)
-        X_t = self.get_X_t(t)
-        
-        F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
-        return F_A_t
+        return tens(phi_fore)
 
 
-
-
-    def get_obs_and_pred(self, only_present, t_start, t_end, inds_keep_subset = None, steps_ahead=0, forecast_type = "flat"):
+    def get_obs_and_pred(self, only_present, t_start, t_end, inds_keep_subset = None, steps_ahead=1, forecast_type = "flat"):
 
         if inds_keep_subset is None:
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
@@ -1260,21 +1261,31 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         F_Y_vec_all = np.zeros(0)
         Y_vec_all = np.zeros(0)
 
-        for t in range(t_start, t_end): 
+        if forecast_type.startswith("AR"):
+            phi_fore = self.get_AR_forecast(t_start-self.T_train_AR, t_start, steps_ahead=steps_ahead, AR_type=forecast_type)
+        else:
+            assert forecast_type == "flat", "unrecognized forecast type"
+        
+        assert self.X_T is None, "Not ready for forecast with external regressors"
+
+        for k, t in enumerate(range(t_start, t_end+1)): 
+
+            if forecast_type == "flat":
+                phi_fore_t = self.get_flat_forecast(t, steps_ahead=steps_ahead).detach()
+
+            elif forecast_type.startswith("AR"):
+                phi_fore_t = phi_fore[:, k]
             
+            F_Y_t = self.exp_Y(phi_fore_t, beta=None, X_t=None)
+        
             Y_t = self.get_Y_t(t)
             Y_vec_t = Y_t.detach().numpy()
-            if forecast_type == "flat":
-                F_Y_vec_t = self.get_flat_forecast(t, steps_ahead=steps_ahead).detach().numpy()
-            elif forecast_type.startswith("AR"):
-                F_Y_vec_t = self.get_AR_forecast(t, steps_ahead=steps_ahead, AR_type=forecast_type).detach().numpy()
-            else:
-                raise Exception("unrecognized forecast type")
 
             if only_present:
                 inds_keep_subset = Y_t>0            
+                
             Y_vec_all = np.append(Y_vec_all, Y_vec_t[inds_keep_subset])
-            F_Y_vec_all = np.append(F_Y_vec_all, F_Y_vec_t[inds_keep_subset])
+            F_Y_vec_all = np.append(F_Y_vec_all, F_Y_t[inds_keep_subset])
             
         return Y_vec_all, F_Y_vec_all
 
@@ -1311,6 +1322,8 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         self.max_score_rescaled_val =  self.__max_score_rescaled_val
         self.init_all_stat_par()
    
+        self.forecast_type = "SD"
+
     def remove_sd_specific_keys(self, dic):
         dic.pop("init_sd_type", None)
         dic.pop("rescale_SD", None)
@@ -1731,8 +1744,9 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         F_A_t = self.exp_Y(phi_t, beta=beta_t, X_t=X_t)
         return F_A_t
 
-    def get_obs_and_pred(self, only_present, t_start, t_end, inds_keep_subset = None, steps_ahead=1):
+    def get_obs_and_pred(self, only_present, t_start, t_end, inds_keep_subset = None, steps_ahead=1, forecast_type = "SD"):
 
+        assert forecast_type == "SD", "SD models are ready to forecast only as SD"
         if inds_keep_subset is None:
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
         else:
@@ -1744,7 +1758,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
         F_Y_vec_all = np.zeros(0)
         Y_vec_all = np.zeros(0)
 
-        for t in range(t_start, t_end): 
+        for t in range(t_start, t_end+1): 
             
             Y_t = self.get_Y_t(t)
             Y_vec_t = Y_t.detach().numpy()
@@ -2027,7 +2041,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
 
         return score_dict
 
-    def out_of_sample_eval(self, t_start=None, t_end=None, exclude_never_obs_train=True, steps_ahead=0):
+    def out_of_sample_eval(self, t_start=None, t_end=None, exclude_never_obs_train=True, steps_ahead=1):
  
         if not exclude_never_obs_train:
             raise
@@ -2040,15 +2054,16 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
             t_end = self.T_all
 
 
-        Y_vec_all, F_Y_vec_all = self.get_obs_and_pred(True, t_start, t_end, steps_ahead=steps_ahead)
+        Y_vec_all, F_Y_vec_all = self.get_obs_and_pred(True, t_start, t_end, steps_ahead=steps_ahead, forecast_type = self.forecast_type)
 
         eval_dict = { "mse":mean_squared_error(Y_vec_all, F_Y_vec_all),
             "mse_log":mean_squared_log_error(Y_vec_all, F_Y_vec_all),
             "mae":mean_absolute_error(Y_vec_all, F_Y_vec_all),
             "mae_pct":mean_absolute_percentage_error(Y_vec_all, F_Y_vec_all),
-            "r2_score":r2_score(Y_vec_all, F_Y_vec_all)}
+            "r2_score":r2_score(Y_vec_all, F_Y_vec_all),
+            "n_links": Y_vec_all.shape[0]}
         
-        return eval_dict
+        return eval_dict, Y_vec_all, F_Y_vec_all
 
 class dirSpW1_SD(dirGraphs_SD, dirSpW1_sequence_ss):
 
@@ -2340,10 +2355,12 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
             logger.info(f"using all available test obs for out of sample eval")
             t_end = self.T_all
 
-        Y_vec_all, F_Y_vec_all = self.get_obs_and_pred(False, t_start, t_end, inds_keep_subset=inds_keep_subset, steps_ahead=steps_ahead)
+        Y_vec_all, F_Y_vec_all = self.get_obs_and_pred(False, t_start, t_end, inds_keep_subset=inds_keep_subset, steps_ahead=steps_ahead, forecast_type = self.forecast_type)
         logger.info(f"out of sample eval on {Y_vec_all.size} observations")
         auc_score = roc_auc_score(Y_vec_all, F_Y_vec_all)
-        return {"auc_score":auc_score}
+        eval_dict = {"auc_score":auc_score, "n_links": Y_vec_all.shape[0]}
+
+        return eval_dict, Y_vec_all, F_Y_vec_all
 
 class dirBin1_SD(dirGraphs_SD, dirBin1_sequence_ss):
 
