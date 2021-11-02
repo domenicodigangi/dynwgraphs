@@ -1,3 +1,6 @@
 [submodule "dynwgraphs/adahessian"]
 	path = dynwgraphs/adahessian
 	url = https://github.com/domenicodigangi/adahessian.git
+[submodule "dynwgraphs/tobit"]
+	path = dynwgraphs/tobit
+	url = https://github.com/domenicodigangi/tobit.git
