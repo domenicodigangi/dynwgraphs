@@ -11,7 +11,7 @@ from dynwgraphs.tobit.tobit  import TobitModel
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression, LinearRegression
-
+from scipy.stats import norm
 import itertools
 import logging
 logger = logging.getLogger(__name__)
