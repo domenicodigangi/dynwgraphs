@@ -1,14 +1,34 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+#########
+#Filename: d:\pCloud\Dynamic_Networks\repos\DynWGraphsPaper\src\dynwgraphs\.gitignore copy
+#Path: d:\pCloud\Dynamic_Networks\repos\DynWGraphsPaper\src\dynwgraphs
+#Created Date: Sunday, November 28th 2021, 10:35:27 am
+#Author: Domenico Di Gangi
+#
+#Copyright (c) 2021 Your Company
+########
 
-# C extensions
-*.so
+
+
+data/estimates_real_data/
+
+data/estimates_sim_data/
+
+data/estimates_test/
+
+mlruns/
+
+runs/
+
+tb_logs/
+
+data_dynwgraphs_model/
+
+.vscode/
+
+dev_test_data/
 
 # Distribution / packaging
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -21,104 +41,14 @@ parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+dynwgraphs/__pycache__/
+dynwgraphs/hypergrad/__pycache__/
+dynwgraphs/utils/__pycache__/
+dev_utils/__pycache__/
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# celery beat schedule file
-celerybeat-schedule
-
-# SageMath parsed files
-*.sage.py
-
-# dotenv
-.env
-
-# virtualenv
-.venv
-venv/
-ENV/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-
-# IDE settings
-.vscode/
-env_dynwgraphs/
-
-# tensorboard logs
-dev_utils/runs
-
-# temp data
-dev_utils/temp_data
-
-mlruns/
-
-tb_logs/
-
-runs/
-
-data_dynwgraphs_model/
-
-.vscode/
-
-dev_test_data/
+*__pycache__/
