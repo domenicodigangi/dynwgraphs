@@ -52,12 +52,12 @@ def predict_ZA_regression(x_T, y_T, T_train, t_oos, ker_type=None, bandwidth=Non
 
     x_train, y_train = x_T[:T_train], y_T[:T_train]
     y_train_bin = y_train > 0
-    model_bin = LogisticRegression()
+    model_bin = LogisticRegression(max_iter=300)
     model_w = LinearRegression()
-    model_bin.fit(x_train, y_train_bin)
-    model_w.fit(x_train, y_train)
+    model_bin.fit(x_train.values, y_train_bin.values)
+    model_w.fit(x_train.values, y_train.values)
     pred = model_w.predict(x_T.iloc[T_train:T_train+t_oos, : ].values)
-    bin_pred = model_bin.predict_proba(x_T.iloc[T_train:T_train+t_oos, : ].values)[1]
+    bin_pred = model_bin.predict_proba(x_T.iloc[T_train:T_train+t_oos, : ].values)[0][1]
     pred[pred<0] = 0
     fract_nnz = (y_train.values > 0).mean()
     
