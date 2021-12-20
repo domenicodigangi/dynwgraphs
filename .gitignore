@@ -50,5 +50,5 @@ dynwgraphs/__pycache__/
 dynwgraphs/hypergrad/__pycache__/
 dynwgraphs/utils/__pycache__/
 dev_utils/__pycache__/
-
+*pyc
 *__pycache__/
