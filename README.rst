@@ -24,7 +24,7 @@ A package to model dynamical weighted, possibly sparse, graphs a.k.a. known as c
 
 
 * Free software: MIT license
-* Documentation: https://dynwgraphs.readthedocs.io.
+
 
 
 Features
