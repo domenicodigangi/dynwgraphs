@@ -19,7 +19,7 @@ from dynwgraphs.dirGraphs1_dynNets import  dirBin1_sequence_ss, dirBin1_SD, dirS
 import importlib
 
 importlib.reload(dynwgraphs)
-from dynwgraphs.utils.dgps import get_test_w_seq, get_dgp_mod_and_par, dgpAR
+from dynwgraphs.utils.dgps import get_test_w_seq, get_dgp_mod_and_par
 
 # %%
 

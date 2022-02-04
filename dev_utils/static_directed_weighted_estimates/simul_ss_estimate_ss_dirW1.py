@@ -13,9 +13,8 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import mlflow
-import dynwgraphs
 from dynwgraphs import dirSpW1_dynNet_SD
-from dynwgraphs.utils import splitVec, tens, putZeroDiag, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound, degIO_from_mat, strIO_from_mat, tic, toc, rand_steps, dgpAR, putZeroDiag_T, tens, strIO_from_mat
+from dynwgraphs.utils import tens
 
 # %%
 

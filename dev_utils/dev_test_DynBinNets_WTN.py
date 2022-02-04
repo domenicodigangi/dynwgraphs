@@ -10,7 +10,7 @@ Created on Tue Aug 13 17:56:03 2019
 import sys
 sys.path.append("./src/")
 from utils import splitVec, tens, putZeroDiag, optim_torch, gen_test_net, soft_lu_bound, soft_l_bound,\
-    degIO_from_mat, strIO_from_mat, tic, toc, rand_steps, dgpAR, putZeroDiag_T
+    degIO_from_mat, strIO_from_mat, tic, toc, rand_steps
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
