@@ -77,10 +77,12 @@ def dgpAR(mu, B, sigma, T, minMax=None, scaling="uniform"):
     return path
 
 
-def dgpSin(mu, n_cycles, rel_ampl, T, minMax=None, scaling="uniform"):
+def dgpSin(mu, n_cycles, rel_ampl, T, phase=None, minMax=None, scaling="uniform"):
 
     period = T / n_cycles
-    path = mu + mu * rel_ampl * torch.sin(torch.range(0, T-1) / period * (2 * torch.pi))
+    path = mu + mu * rel_ampl * torch.sin(
+        phase + torch.range(0, T - 1) / period * (2 * torch.pi)
+    )
 
     if minMax is not None:
         path = rescale(path, minMax, scaling=scaling)
@@ -136,8 +138,12 @@ def sample_par_vec_dgp_sin(
 
     N = unc_mean_vec.shape[0]
     par_T_sample_mat = torch.zeros(N, T)
+    phases = torch.rand(N) * 2 * torch.pi
     for i in range(N):
-        par_T_sample_mat[i, :] = dgpSin(unc_mean_vec[i], n_cycles, rel_aplitude, T)
+        phase = phases[i]
+        par_T_sample_mat[i, :] = dgpSin(
+            unc_mean_vec[i], n_cycles, rel_aplitude, T, phase=phase
+        )
 
     par_T_sample_list = model.par_tens_T_to_list(par_T_sample_mat)
 
