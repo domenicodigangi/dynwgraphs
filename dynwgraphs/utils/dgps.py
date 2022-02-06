@@ -133,11 +133,12 @@ def sample_par_vec_dgp_ar(model, unc_mean_vec, B, sigma, T, identify=True):
 
 
 def sample_par_vec_dgp_sin(
-    model, unc_mean_vec, n_cycles, rel_aplitude, T, identify=True
+    model, unc_mean_vec, n_cycles, rel_aplitude, T, identify=True, manual_seed=0
 ):
 
     N = unc_mean_vec.shape[0]
     par_T_sample_mat = torch.zeros(N, T)
+    torch.manual_seed(manual_seed)
     phases = torch.rand(N) * 2 * torch.pi
     for i in range(N):
         phase = phases[i]
