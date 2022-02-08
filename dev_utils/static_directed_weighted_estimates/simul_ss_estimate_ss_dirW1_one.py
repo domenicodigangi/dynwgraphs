@@ -58,15 +58,6 @@ dist_par_re = model.link_dist_par(dist_par_un_dgp, N)
 
 dist = model.dist_from_pars(distribution, phi, beta, X_t, dist_par_re)
 
-    Y_t_S = dist.sample((N_sample,)).permute(1, 2, 0)
-    A_t_S = torch.distributions.bernoulli.Bernoulli(p_T[:, :, t]).sample((N_sample, )).view(N, N, N_sample) == 1
-    Y_t_S[~A_t_S] = 0
-    Y_t_S = putZeroDiag_T(Y_t_S)
-    Y_T[:, :, t, :] = Y_t_S
-
-return Y_T, phi_T, X_T, beta_T, dist_par_un
-
-
 # %% Test single snapshot estimates of  phi
 beta_t = torch.zeros(N)
 diag = []

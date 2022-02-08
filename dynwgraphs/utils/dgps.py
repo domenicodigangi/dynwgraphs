@@ -19,6 +19,8 @@ from . import _test_w_data_
 from .tensortools import splitVec, strIO_from_tens_T, tens, size_from_str
 import torch
 import numpy as np
+import pandas as pd
+
 from dynwgraphs.dirGraphs1_dynNets import (
     dirBin1_sequence_ss,
     dirSpW1_sequence_ss,
@@ -117,6 +119,20 @@ def get_test_w_seq(avg_weight=1e5):
     return Y_T, X_scalar_T, X_T_multi
 
 
+def get_test_w_mat(avg_weight=1e5, T_avg_data = 10):
+    # create reference matrix from test data
+    Y_0 = Y_T[:, :, :T_avg_data].mean(axis=2) 
+    A_0 = Y_0 > 0
+    df = pd.DataFrame({"row_sum": A_0.sum(axis=1), "col_sum": A_0.sum(axis=0)})
+    df = df.sort_values(by=["col_sum", "row_sum"], ascending=False)
+    inds_to_drop = (df["col_sum"] == 0) | (df["row_sum"] == 0)
+    df = df.drop(df[inds_to_drop].index)
+    inds_ref_mat = df.index.values
+    Y = Y_0[inds_ref_mat, :][:, inds_ref_mat]
+    Y = Y / Y.mean() * avg_weight
+    return Y
+
+
 def sample_par_vec_dgp_ar(model, unc_mean_vec, B, sigma, T, identify=True):
 
     N = unc_mean_vec.shape[0]
@@ -160,11 +176,12 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict, Y_reference=None):
     T_train = dgp_set_dict["T_train"]
     size_phi_t = size_from_str(dgp_set_dict["size_phi_t"], N)
     if Y_reference is None:
-        Y_T_test, _, _ = get_test_w_seq(avg_weight=1e3)
+        Y_test = get_test_w_mat(avg_weight=1e3)
+
         if bin_or_w == "w":
-            Y_reference = (Y_T_test[:N, :N, 0]).float()
+            Y_reference = (Y_test).float()
         elif bin_or_w == "bin":
-            Y_reference = (Y_T_test[:N, :N, 0] > 0).float()
+            Y_reference = (Y_test > 0).float()
 
     else:
         assert N == Y_reference.shape[0]
