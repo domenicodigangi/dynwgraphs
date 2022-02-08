@@ -170,8 +170,9 @@ def sample_par_vec_dgp_sin(
     return par_T_sample_list
 
 
-def get_dgp_mod_and_par(N, T, dgp_set_dict, Y_reference=None):
+def get_dgp_mod_and_par(N, T, dgp_set_dict, Y_reference=None, manual_seed=0):
 
+    # torch.manual_seed(manual_seed)
     bin_or_w = dgp_set_dict["bin_or_w"]
     T_train = dgp_set_dict["T_train"]
     size_phi_t = size_from_str(dgp_set_dict["size_phi_t"], N)

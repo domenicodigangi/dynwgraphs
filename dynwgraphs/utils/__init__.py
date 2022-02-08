@@ -15,7 +15,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # load test data
-stream =  pkg_resources.resource_stream(__name__, os.path.join( "test_data", "dir_w_test_data.npz"))
+stream = pkg_resources.resource_stream(__name__, os.path.join( "test_data", "dir_w_test_data.npz"))
 
 _test_w_data_ = dict(np.load(stream))
 
