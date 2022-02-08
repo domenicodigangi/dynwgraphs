@@ -161,12 +161,11 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict, Y_reference=None, manual_seed=0):
     T_train = dgp_set_dict["T_train"]
     size_phi_t = size_from_str(dgp_set_dict["size_phi_t"], N)
     if Y_reference is None:
-        Y_T_test, _, _ = get_test_w_seq(avg_weight=1e3)
+        Y_test = get_test_w_mat(avg_weight=1e3)
         if bin_or_w == "w":
-            Y_reference = (Y_T_test[:N, :N, 0]).float()
+            Y_reference = Y_test.float()
         elif bin_or_w == "bin":
-            Y_reference = (Y_T_test[:N, :N, 0] > 0).float()
-
+            Y_reference = (Y_test > 0).float()
     else:
         assert N == Y_reference.shape[0]
 
