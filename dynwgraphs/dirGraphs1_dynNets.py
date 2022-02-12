@@ -1201,8 +1201,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         return model_info_dict
 
-    def load_par(self, load_path):
-        logger.info("Loading par")
+    def load_par(self, load_path, log=True):
+        if log:
+            logger.info("Loading par")
         if load_path[-4:] == ".pkl":
             file_name = load_path
         else:
@@ -2008,8 +2009,8 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
 
         return info_dict
 
-    def load_par(self, load_path):
-        super().load_par(load_path)
+    def load_par(self, load_path, log=True):
+        super().load_par(load_path, log=log)
         self.roll_sd_filt_train()
 
     def get_SD_forecast(self, t, steps_ahead=1):

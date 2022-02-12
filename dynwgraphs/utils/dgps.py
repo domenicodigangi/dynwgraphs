@@ -119,18 +119,19 @@ def get_test_w_seq(avg_weight=1e5):
     return Y_T, X_scalar_T, X_T_multi
 
 
-def get_test_w_mat(avg_weight=1e5, T_avg_data = 10):
+def get_test_w_mat(avg_weight=1e5, T_avg_data=10, N=50):
     # create reference matrix from test data
-    Y_0 = Y_T[:, :, :T_avg_data].mean(axis=2) 
+    Y_T = tens(_test_w_data_["Y_T"])
+    Y_0 = Y_T[:, :, :T_avg_data].mean(dim=2) 
     A_0 = Y_0 > 0
-    df = pd.DataFrame({"row_sum": A_0.sum(axis=1), "col_sum": A_0.sum(axis=0)})
+    df = pd.DataFrame({"row_sum": A_0.sum(dim=1), "col_sum": A_0.sum(dim=0)})
     df = df.sort_values(by=["col_sum", "row_sum"], ascending=False)
     inds_to_drop = (df["col_sum"] == 0) | (df["row_sum"] == 0)
     df = df.drop(df[inds_to_drop].index)
     inds_ref_mat = df.index.values
     Y = Y_0[inds_ref_mat, :][:, inds_ref_mat]
     Y = Y / Y.mean() * avg_weight
-    return Y
+    return Y[:N, :N]
 
 
 def sample_par_vec_dgp_ar(model, unc_mean_vec, B, sigma, T, identify=True):
@@ -180,9 +181,9 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict, Y_reference=None, manual_seed=0):
         Y_test = get_test_w_mat(avg_weight=1e3)
 
         if bin_or_w == "w":
-            Y_reference = (Y_test).float()
+            Y_reference = tens(Y_test)
         elif bin_or_w == "bin":
-            Y_reference = (Y_test > 0).float()
+            Y_reference = tens(Y_test > 0)
 
     else:
         assert N == Y_reference.shape[0]
