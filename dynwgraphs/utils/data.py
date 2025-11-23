@@ -30,7 +30,7 @@ def cluster_2_and_fill_less_freq(obs_in):
 
 
 
-    obs = pd.Series(obs.flatten()).fillna(method="ffill").values
+    obs = pd.Series(obs.flatten()).ffill().values
 
     nainds = np.isnan(obs)
     if np.any(nainds):

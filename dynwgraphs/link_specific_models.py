@@ -7,7 +7,14 @@ Created on Wednesday December 15th 2021
 
 """
 
-from dynwgraphs.tobit.tobit  import TobitModel
+# Optional import for Tobit model (git submodule)
+try:
+    from dynwgraphs.tobit.tobit import TobitModel
+    HAS_TOBIT = True
+except ImportError:
+    HAS_TOBIT = False
+    TobitModel = None
+
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression, LinearRegression
@@ -33,6 +40,11 @@ def get_ij_giraitis_reg(i, j, Y_T, T_train, t_oos):
     return x_T, y_T
 
 def predict_kernel_tobit(x_T, y_T, T_train, t_oos, ker_type="gauss", bandwidth=20):
+    if not HAS_TOBIT:
+        raise ImportError(
+            "TobitModel is not available. "
+            "Please initialize the git submodule: git submodule update --init tobit"
+        )
 
     x_train, y_train = x_T[:T_train], y_T[:T_train]
     tr = TobitModel()

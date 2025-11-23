@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop, claude/** ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    name: Test on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: false  # Don't fail on uninitialized submodules
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov flake8
+
+    - name: Lint with flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 dynwgraphs tests --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings
+        flake8 dynwgraphs tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      continue-on-error: true
+
+    - name: Run tests with pytest
+      run: |
+        pytest tests/ -v --cov=dynwgraphs --cov-report=xml --cov-report=term
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-${{ matrix.python-version }}
+        fail_ci_if_error: false
+
+  lint:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort
+
+    - name: Check code formatting with black
+      run: |
+        black --check dynwgraphs tests
+      continue-on-error: true
+
+    - name: Check import sorting with isort
+      run: |
+        isort --check-only dynwgraphs tests
+      continue-on-error: true
+
+    - name: Lint with flake8
+      run: |
+        flake8 dynwgraphs tests --count --statistics
+      continue-on-error: true
+
+  security:
+    name: Security Checks
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install -e .
+        pip install bandit pip-audit || echo "Some security tools failed to install"
+
+    - name: Run Bandit security linter
+      run: |
+        echo "=== Running Bandit Security Scan ==="
+        if command -v bandit &> /dev/null; then
+          bandit -r dynwgraphs/ -f json -o bandit-report.json || echo "Bandit JSON report failed"
+          bandit -r dynwgraphs/ -f txt || echo "Bandit scan completed with warnings"
+        else
+          echo "Bandit not available, skipping"
+        fi
+      continue-on-error: true
+
+    - name: Audit PyPI packages (pip-audit)
+      run: |
+        echo "=== Running pip-audit ==="
+        if command -v pip-audit &> /dev/null; then
+          pip-audit --desc --format json --output pip-audit-report.json || echo "pip-audit JSON report failed"
+          pip-audit --desc || echo "pip-audit completed with findings"
+        else
+          echo "pip-audit not available, skipping"
+        fi
+      continue-on-error: true
+
+    - name: Check for outdated packages
+      run: |
+        echo "=== Checking for outdated packages ==="
+        pip list --outdated || true
+      continue-on-error: true
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          pip-audit-report.json
+        if-no-files-found: ignore

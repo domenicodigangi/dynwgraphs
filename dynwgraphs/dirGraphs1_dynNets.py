@@ -33,6 +33,7 @@ from .utils.tensortools import (
 from .utils.opt import optim_torch
 from .utils.graph_properties import MatrixSymmetry
 from .utils.data import cluster_2_and_fill_less_freq
+from .exceptions import SecurityError
 import itertools
 from sklearn.metrics import (
     roc_auc_score,
@@ -97,23 +98,23 @@ class dirGraphs_funs(nn.Module):
         elif (X is None) and (beta is None):
             return False
         elif (X is not None) and (beta is None):
-            raise
+            raise ValueError("beta must be provided when X (regressors) is specified")
         elif (X is None) and (beta is not None):
-            raise
+            raise ValueError("X (regressors) must be provided when beta is specified")
 
     def check_reg_and_coeff_shape(self, X_t, beta_t):
         """
         Check that the shape of regressors and coefficients are correct and agree at every time step
         """
         if not (X_t.dim() == 3):
-            raise
+            raise ValueError(f"X_t must be a 3-dimensional tensor, got shape {X_t.shape}")
         if not (X_t.shape[0] == X_t.shape[1] == self.N):
-            raise
+            raise ValueError(f"X_t dimensions 0 and 1 must both equal N={self.N}, got shape {X_t.shape}")
         if beta_t.dim() != 2:
-            raise
+            raise ValueError(f"beta_t must be a 2-dimensional tensor, got shape {beta_t.shape}")
 
         if X_t.shape[2] != beta_t.shape[1]:
-            raise Exception(f"X_t.shape = {X_t.shape} , beta_t.shape = {beta_t.shape} ")
+            raise ValueError(f"X_t.shape[2] must equal beta_t.shape[1]. X_t.shape = {X_t.shape}, beta_t.shape = {beta_t.shape}")
 
         if beta_t.shape[0] not in [1, self.N, 2 * self.N]:
             raise Exception(
@@ -143,10 +144,10 @@ class dirGraphs_funs(nn.Module):
                 phi_i, phi_o = splitVec(phi)
                 return phi_i + phi_o.unsqueeze(1)
             elif phi.shape[0] == self.N:
-                raise "Not ready"
+                raise NotImplementedError("Undirected model with phi.shape[0] == N is not yet implemented")
                 return phi + phi.unsqueeze(1)
             else:
-                raise
+                raise ValueError(f"Invalid phi shape: expected shape[0] to be N={self.N} or 2*N={2*self.N}, got {phi.shape[0]}")
 
     def exp_of_fit_plus_reg(self, phi, beta, X_t, ret_log=False, ret_all=False):
         """
@@ -203,7 +204,7 @@ class dirGraphs_funs(nn.Module):
                     par_tens,
                 )
             else:
-                raise
+                raise ValueError(f"For 2D par_tens, inds must be 1D, got inds.dim()={inds.dim()}")
         else:
             raise Exception(
                 "Do not know how to handle tensors of parameters with more than 2 dims"
@@ -275,16 +276,16 @@ class dirGraphs_funs(nn.Module):
         # set the first in parameter to zero
         phi_i, phi_o = splitVec(phi)
         if self.par_vec_id_type != "in_sum_zero":
-            raise
+            raise ValueError(f"Identification type '{self.par_vec_id_type}' is not compatible with uniform beta. Expected 'in_sum_zero'")
         else:
             if (~torch.isclose(phi_i.mean(), torch.zeros(1), atol=1e-4)).any():
-                raise
+                raise ValueError(f"phi_i.mean() must be close to zero for identification, got {phi_i.mean().item()}")
 
         # raise error for cases where the identification problem is not yet clear
         if beta.shape[0] > 1:
-            raise
+            raise NotImplementedError(f"Identification with beta.shape[0] > 1 not yet implemented, got beta.shape={beta.shape}")
         if beta.shape[1] > 1:
-            raise
+            raise NotImplementedError(f"Identification with beta.shape[1] > 1 (multiple regressors) not yet implemented, got beta.shape={beta.shape}")
 
         d = phi_o.mean()
         phi_i_out = phi_i
@@ -371,7 +372,7 @@ class dirGraphs_funs(nn.Module):
         elif ls[0].dim() == 2:
             return torch.stack([p.data for p in ls], dim=2)
         else:
-            raise
+            raise ValueError(f"Cannot convert list to tensor: elements have unsupported dimensionality {ls[0].dim()} (expected 0, 1, or 2)")
 
     def list_to_time_ser(self, ls, T):
         if ls is not None:
@@ -393,7 +394,7 @@ class dirGraphs_funs(nn.Module):
             elif len(par_list_T) == 1:
                 return par_list_T[0]
             else:
-                raise
+                raise ValueError(f"Parameter list has length {len(par_list_T)} but is_tv={is_tv}. Expected either is_tv=True or len(par_list_T)=1")
 
     def get_reg_t_or_none(self, t, Z_T):
         """regressors are assumed to always be in the form of 4d tensor N x N x N_regressors x T"""
@@ -458,7 +459,7 @@ class dirGraphs_funs(nn.Module):
 
         if avoid_empty:
             if A_T is not None:
-                raise
+                raise NotImplementedError("avoid_empty is not compatible with A_T constraint (structural zeros). Cannot add links to avoid empty snapshots when A_T is specified")
             #  avoid snapshots having completely empty networks
             empty_T = Y_T_sampled.sum(dim=(0, 1)) == 0
             if any(empty_T):
@@ -623,11 +624,23 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         return size_from_str(pox_str, self.N)
 
     def tv_flag_list_from_input(self, beta_tv):
+        """Convert beta_tv input to boolean tensor.
+
+        SECURITY: Uses ast.literal_eval() instead of eval() to prevent code injection.
+        Only safe literal structures (strings, bytes, numbers, tuples, lists, dicts,
+        sets, booleans, None) are allowed.
+        """
         if type(beta_tv) == str:
-            if ("[" in beta_tv) and ("]" in beta_tv):
-                return eval(beta_tv)
-            else:
-                return self.tv_flag_list_from_input(eval(beta_tv))
+            import ast
+            try:
+                # Safe evaluation of string literals only
+                parsed_value = ast.literal_eval(beta_tv)
+                return self.tv_flag_list_from_input(parsed_value)
+            except (ValueError, SyntaxError) as e:
+                raise ValueError(
+                    f"Invalid beta_tv string '{beta_tv}'. "
+                    f"Only literal values (lists, booleans, numbers) are allowed. Error: {e}"
+                )
         elif type(beta_tv) == bool:
             return tens([beta_tv for p in range(self.n_reg)]).bool()
         elif type(beta_tv) in [int, float]:
@@ -635,11 +648,31 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         elif type(beta_tv) in [list, torch.Tensor]:
             return tens(beta_tv).bool()
         else:
-            raise Exception("Wrong type for beta_tv")
+            raise TypeError(f"Wrong type for beta_tv: {type(beta_tv)}")
 
     def tv_flag_bool_from_input(self, tv_flag):
+        """Convert tv_flag input to boolean.
+
+        SECURITY: Uses ast.literal_eval() instead of eval() to prevent code injection.
+        """
         if type(tv_flag) == str:
-            return bool(eval(tv_flag))
+            import ast
+            # Safe string-to-bool conversion
+            tv_flag_lower = tv_flag.lower().strip()
+            if tv_flag_lower in ['true', '1']:
+                return True
+            elif tv_flag_lower in ['false', '0']:
+                return False
+            else:
+                try:
+                    # Try safe literal evaluation as fallback
+                    parsed_value = ast.literal_eval(tv_flag)
+                    return bool(parsed_value)
+                except (ValueError, SyntaxError) as e:
+                    raise ValueError(
+                        f"Invalid tv_flag string '{tv_flag}'. "
+                        f"Expected 'true', 'false', '1', '0', or a literal value. Error: {e}"
+                    )
         elif tv_flag in [True, False]:
             return bool(tv_flag)
         elif tv_flag in [1, 1.0]:
@@ -698,7 +731,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.beta_T = None
             if self.beta_tv is not None:
                 if any(self.beta_tv):
-                    raise
+                    raise ValueError("beta_tv indicates time-varying betas but X_T (regressors) is None. Cannot have time-varying beta coefficients without regressors")
         else:
             if self.any_beta_tv():
                 self.beta_T = [
@@ -764,7 +797,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def get_train_obs_t(self, t):
         if t > self.T_train:
-            raise
+            raise ValueError(f"Cannot get training observation at t={t}: exceeds T_train={self.T_train}")
         else:
             return self.get_obs_t(t)
 
@@ -816,7 +849,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def shift_sequence_phi_o_T_beta_const(self, c, x_T):
         if self.reg_cross_unique.sum() > 1:
-            raise
+            raise ValueError(f"Cannot shift parameters: expected at most 1 cross-unique regressor, got {self.reg_cross_unique.sum().item()}")
 
         beta_t_all = self.beta_T[0].clone()
         beta_t_all[:, self.reg_cross_unique] = beta_t_all[:, self.reg_cross_unique] + c
@@ -912,11 +945,11 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.phi_T[t] = phi_t_id_0
 
             if sum(self.reg_cross_unique) > 1:
-                raise
+                raise ValueError(f"Cannot identify sequences: expected at most 1 cross-unique regressor, got {sum(self.reg_cross_unique)}")
             c = -self.beta_T[0][0] + 1  # phi_o_T_sum/x_T_sum
 
             if len(self.beta_T) > 1:
-                raise
+                raise ValueError(f"Cannot identify sequences: expected single-snapshot beta_T (len=1), got len(beta_T)={len(self.beta_T)}")
 
             self.shift_sequence_phi_o_T_beta_const(c, x_T)
 
@@ -963,7 +996,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             if all(unique_flag_T):
                 reg_cross_unique[k] = True
             elif np.all(unique_flag_T) > 0.1:
-                raise
+                raise ValueError(f"Regressor {k} has inconsistent cross-sectional uniqueness: uniform in >10% of time steps but not all. Got {np.mean(unique_flag_T)*100:.1f}% uniform")
         return reg_cross_unique
 
     def run_checks(self):
@@ -986,15 +1019,15 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         if est_phi:
             if phi_t is None:
-                raise
+                raise ValueError(f"Cannot estimate phi_t at t={t}: phi_t is None (model has no fitness parameters)")
             par_l_to_opt.append(phi_t)
         if est_dist_par:
             if dist_par_un_t is None:
-                raise
+                raise ValueError(f"Cannot estimate dist_par_un_t at t={t}: dist_par_un_t is None (model has no distribution parameters)")
             par_l_to_opt.append(dist_par_un_t)
         if est_beta:
             if beta_t is None:
-                raise
+                raise ValueError(f"Cannot estimate beta_t at t={t}: beta_t is None (model has no regressors)")
             par_l_to_opt.append(beta_t)
 
         def obj_fun():
@@ -1201,15 +1234,53 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         return model_info_dict
 
-    def load_par(self, load_path, log=True):
+    def load_par(self, load_path, log=True, trust_source=False):
+        """Load parameters from a pickle file.
+
+        SECURITY WARNING: Loading pickle files can execute arbitrary code.
+        Only load pickle files from trusted sources.
+
+        Args:
+            load_path: Path to the pickle file
+            log: Whether to log the loading
+            trust_source: Must be explicitly set to True to load pickle files.
+                         This confirms you trust the source of the file.
+
+        Raises:
+            SecurityError: If trust_source is not explicitly set to True
+        """
+        if not trust_source:
+            raise SecurityError(
+                "Loading pickle files can execute arbitrary code. "
+                "Only load pickle files from trusted sources. "
+                "Set trust_source=True if you trust this file source."
+            )
+
         if log:
-            logger.info("Loading par")
+            logger.info(f"Loading parameters from: {load_path}")
+            logger.warning("Loading pickle file - ensure this is from a trusted source")
+
         if load_path[-4:] == ".pkl":
             file_name = load_path
         else:
             file_name = self.file_names(load_path)["parameters"]
 
-        par_dic = pickle.load(open(file_name, "rb"))
+        # Validate file path to prevent path traversal
+        import os
+        file_name = os.path.normpath(file_name)
+        if not os.path.isfile(file_name):
+            raise FileNotFoundError(f"Parameter file not found: {file_name}")
+
+        # Load with explicit error handling
+        try:
+            with open(file_name, "rb") as f:
+                par_dic = pickle.load(f)
+        except (pickle.UnpicklingError, EOFError, AttributeError) as e:
+            raise ValueError(f"Failed to load parameters from {file_name}: {e}")
+
+        # Validate loaded data structure
+        if not isinstance(par_dic, dict):
+            raise ValueError(f"Expected dict from pickle file, got {type(par_dic)}")
 
         self.set_par_val_from_dict(par_dic)
 
@@ -1246,7 +1317,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                                     f"attribute {k} of wrong shape {a[t].shape}, {v[t].shape}"
                                 )
                     else:
-                        raise
+                        raise TypeError(f"Cannot set attribute {k}: type mismatch (expected {type(a).__name__}, got {type(v).__name__})")
 
         self.par_dict_to_save = dict
         self.start_opt_from_current_par = True
@@ -1436,9 +1507,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 armod = AutoReg(phi_i_T, order_AR, old_names=False)
                 res = armod.fit()
                 phi_fore[i, :] = res.predict(start=T, end=T + steps_ahead - 1)
-            except:
+            except Exception as e:
                 print(phi_i_T)
-                raise
+                raise RuntimeError(f"AutoReg forecast failed for parameter index {i} with order {order_AR}. Time series values: {phi_i_T}") from e
 
         return tens(phi_fore)
 
@@ -1456,7 +1527,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
         else:
             if only_present:
-                raise
+                raise ValueError("Cannot specify both inds_keep_subset and only_present=True. These options are mutually exclusive")
 
         if steps_ahead == 0:
             logger.error(f"using contemporaneous parameters for prediction")
@@ -1710,7 +1781,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
                 if self.dist_par_tv:
                     self.dist_par_un_T[0] = self.sd_stat_par_un_dist_par_un["init_val"]
         else:
-            raise
+            raise ValueError(f"Unknown init_sd_type: '{self.init_sd_type}'. Valid options are: 'unc_mean', 'est_joint', 'est_ss_before'")
 
         for t in range(1, T_last):
             self.update_sd_all_tv_par(t)
@@ -2020,7 +2091,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             logger.error(
                 f"Should forecast time steps not in the train set T_train {self.T_train}, required {t}"
             )
-            raise
+            raise ValueError(f"Cannot forecast at t={t}: must forecast beyond training period (T_train={self.T_train})")
 
         # Score driven parameters at time t are actually forecasts, since they are computed using obs up to t-1
         phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
@@ -2044,7 +2115,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
         else:
             if only_present:
-                raise
+                raise ValueError("Cannot specify both inds_keep_subset and only_present=True. These options are mutually exclusive")
 
         self.roll_sd_filt(self.T_all)
 
@@ -2389,7 +2460,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
     ):
 
         if not exclude_never_obs_train:
-            raise
+            raise NotImplementedError("Out-of-sample evaluation with exclude_never_obs_train=False is not yet implemented")
 
         if t_start is None:
             t_start = self.t_test_1
@@ -2511,7 +2582,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
             if degIO is None:
                 degIO = strIO_from_mat(Y_t)
             if (sum(degIO) == 0) | (sum(phi) == 0):
-                raise
+                raise ValueError("Cannot compute zero degree parameters: degIO sum or phi sum is zero")
             degI, degO = splitVec(degIO)
             par_i, par_o = splitVec(phi)
             imin = degI[degI != 0].argmin()
@@ -2527,7 +2598,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
                 logger.error(
                     ((par_i - par_i[imin])[diffDegs != 0]) / diffDegs[diffDegs != 0]
                 )
-                raise
+                raise ValueError(f"avgParStepI is not finite: {avgParStepI}. Cannot compute zero degree parameters using AVGSPACING method")
             diffDegs = degO[degO != 0] - degO[degO != 0][omin]
             avgParStepO = torch.mean(
                 (par_o[degO != 0] - par_o[degO != 0][omin])[diffDegs != 0]
@@ -2537,7 +2608,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
                 logger.error(
                     ((par_i - par_i[imin])[diffDegs != 0]) / diffDegs[diffDegs != 0]
                 )
-                raise
+                raise ValueError(f"avgParStepO is not finite: {avgParStepO}. Cannot compute zero degree parameters using AVGSPACING method")
             # subtract a multiple of this average step to fitnesses of smallest node
             zero_deg_par_i = (
                 par_i[degI != 0][imin] - avgParStepI * degI[degI != 0][imin]
@@ -2554,7 +2625,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
             if degIO is None:
                 degIO = strIO_from_mat(Y_t)
             if sum(degIO) == 0:  # | (sum(phi) == 0):
-                raise
+                raise ValueError("Cannot compute zero degree parameters: degIO sum is zero (completely empty network)")
             par_i, par_o = splitVec(phi)
             zero_deg_par_i = -par_o.max() + torch.log(max_prob / N)
             zero_deg_par_o = -par_i.max() + torch.log(max_prob / N)
@@ -2595,7 +2666,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
         elif self.phi_T is None:
             return None
         else:
-            raise
+            raise ValueError(f"start_phi_from_obs not implemented for size_phi_t={self.size_phi_t}. Expected size_phi_t=2*N={2*self.N} or None")
 
         return phi_0.clone()
 
@@ -2810,4 +2881,4 @@ def get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, **kwargs):
     elif (bin_or_w == "w") and (ss_or_sd == "sd"):
         return dirSpW1_SD(Y_T, **kwargs)
     else:
-        raise
+        raise ValueError(f"Invalid model specification: bin_or_w='{bin_or_w}', ss_or_sd='{ss_or_sd}'. Valid combinations are ('bin','ss'), ('w','ss'), ('bin','sd'), ('w','sd')")

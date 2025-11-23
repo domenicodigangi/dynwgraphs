@@ -210,11 +210,11 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict, Y_reference=None, manual_seed=0):
                 tens(exp_a / (1 - exp_a))
             )
         else:
-            raise
+            raise ValueError(f"Unknown phi_dgp_type '{phi_dgp_type}' for size_phi_t='2N'. Expected 'ref_mat' or 'const_unif_*'")
     elif dgp_set_dict["size_phi_t"] in ["0", None, "None"]:
         phi_0 = None
     else:
-        raise
+        raise ValueError(f"Unknown size_phi_t value: '{dgp_set_dict['size_phi_t']}'. Expected '2N', '0', None, or 'None'")
     phi_tv = dgp_set_dict["phi_tv"]
 
     if phi_0 is not None:
@@ -228,7 +228,7 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict, Y_reference=None, manual_seed=0):
                     mod_tmp, phi_0, B_or_cycles_phi, sigma_or_rel_ampl_phi, T
                 )
             else:
-                raise
+                raise ValueError(f"Unknown phi_dgp_type for time-varying phi: '{phi_dgp_type}'. Expected 'AR' or 'SIN'")
         else:
             phi_T_dgp = [phi_0]
     else:
@@ -276,18 +276,18 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict, Y_reference=None, manual_seed=0):
             if unc_mean_beta is None:
                 unc_mean_beta = 1 + torch.randn(size_beta_t, 1)
                 if unc_mean_beta.shape[0] != size_beta_t:
-                    raise
+                    raise ValueError(f"unc_mean_beta shape mismatch: expected shape[0]={size_beta_t}, got {unc_mean_beta.shape[0]}")
             elif type(unc_mean_beta) in [float, int]:
                 if size_beta_t > 1:
                     unc_mean_beta = unc_mean_beta + torch.randn(size_beta_t, 1)
                 else:
                     unc_mean_beta = unc_mean_beta * torch.ones(size_beta_t, 1)
             else:
-                raise
+                raise TypeError(f"unc_mean_beta has unsupported type: {type(unc_mean_beta).__name__}. Expected None, float, or int")
 
             if beta_tv[n]:
                 if not all(beta_tv):
-                    raise
+                    raise ValueError(f"Inconsistent beta_tv specification: regressor {n} is time-varying but not all regressors are. All regressors must have the same time-varying behavior")
                 if beta_dgp_type == "AR":
                     if size_beta_t == 1:
                         beta_T_dgp = mod_tmp.par_tens_T_to_list(
@@ -299,7 +299,7 @@ def get_dgp_mod_and_par(N, T, dgp_set_dict, Y_reference=None, manual_seed=0):
                         )
                         beta_T_dgp = [b.unsqueeze(1) for b in beta_T_dgp]
                 else:
-                    raise
+                    raise ValueError(f"Unknown beta_dgp_type for time-varying beta: '{beta_dgp_type}'. Expected 'AR'")
             else:
                 beta_T_dgp = [unc_mean_beta]
 

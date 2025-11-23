@@ -20,7 +20,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import chi2
 from pathlib import Path
-from dynwgraphs.adahessian.image_classification.optim_adahessian import Adahessian
+
+# Optional import for Adahessian optimizer (git submodule)
+try:
+    from dynwgraphs.adahessian.image_classification.optim_adahessian import Adahessian
+    HAS_ADAHESSIAN = True
+except ImportError:
+    HAS_ADAHESSIAN = False
+    Adahessian = None
 
 from ..lbfgsnew import LBFGSNew
 from torch.utils.tensorboard import SummaryWriter
@@ -64,14 +71,24 @@ def optim_torch(obj_fun_, unParIn, max_opt_iter=1000, opt_n="ADAM", lr=0.01, rel
         unPar= [unParIn]
 
     
+    # Check if ADAHESSIAN is requested but not available
+    if opt_n == "ADAHESSIAN" and not HAS_ADAHESSIAN:
+        raise ImportError(
+            "Adahessian optimizer is not available. "
+            "Please initialize the git submodule: git submodule update --init adahessian"
+        )
+
     optimizers = {"SGD" : torch.optim.SGD(unPar, lr=lr, nesterov=False),
                   "ADAM": torch.optim.Adam(unPar, lr=lr),
                   "SGDHD": SGDHD(unPar, lr=lr, hypergrad_lr=1e-8),
                   "ADAMHD": AdamHD(unPar, lr=lr, hypergrad_lr=1e-8),
                   "NESTEROV_1" : torch.optim.SGD(unPar, lr=lr, momentum=0.5, nesterov=True),
                   "NESTEROV_2" : torch.optim.SGD(unPar, lr=lr, momentum=0.7, nesterov=True),
-                  "LBFGS" : torch.optim.LBFGS(unPar, lr=lr),
-                  "ADAHESSIAN" : Adahessian(unPar, lr=lr,  betas= (0.9, 0.999), weight_decay=0)}
+                  "LBFGS" : torch.optim.LBFGS(unPar, lr=lr)}
+
+    # Add ADAHESSIAN optimizer only if available
+    if HAS_ADAHESSIAN:
+        optimizers["ADAHESSIAN"] = Adahessian(unPar, lr=lr, betas=(0.9, 0.999), weight_decay=0)
 
     hparams_dict = {"optimizer": opt_n,  "lr": lr, "n_par": sum((p.numel() for p in unPar))}
 
