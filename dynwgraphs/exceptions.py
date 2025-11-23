@@ -41,3 +41,8 @@ class OptimizationError(DynWGraphsError):
 class IdentificationError(DynWGraphsError):
     """Exception raised when parameter identification constraints are violated."""
     pass
+
+
+class SecurityError(DynWGraphsError):
+    """Exception raised for security-related issues such as loading untrusted files."""
+    pass

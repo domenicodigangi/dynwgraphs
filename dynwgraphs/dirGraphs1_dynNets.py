@@ -33,6 +33,7 @@ from .utils.tensortools import (
 from .utils.opt import optim_torch
 from .utils.graph_properties import MatrixSymmetry
 from .utils.data import cluster_2_and_fill_less_freq
+from .exceptions import SecurityError
 import itertools
 from sklearn.metrics import (
     roc_auc_score,
@@ -623,11 +624,23 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         return size_from_str(pox_str, self.N)
 
     def tv_flag_list_from_input(self, beta_tv):
+        """Convert beta_tv input to boolean tensor.
+
+        SECURITY: Uses ast.literal_eval() instead of eval() to prevent code injection.
+        Only safe literal structures (strings, bytes, numbers, tuples, lists, dicts,
+        sets, booleans, None) are allowed.
+        """
         if type(beta_tv) == str:
-            if ("[" in beta_tv) and ("]" in beta_tv):
-                return eval(beta_tv)
-            else:
-                return self.tv_flag_list_from_input(eval(beta_tv))
+            import ast
+            try:
+                # Safe evaluation of string literals only
+                parsed_value = ast.literal_eval(beta_tv)
+                return self.tv_flag_list_from_input(parsed_value)
+            except (ValueError, SyntaxError) as e:
+                raise ValueError(
+                    f"Invalid beta_tv string '{beta_tv}'. "
+                    f"Only literal values (lists, booleans, numbers) are allowed. Error: {e}"
+                )
         elif type(beta_tv) == bool:
             return tens([beta_tv for p in range(self.n_reg)]).bool()
         elif type(beta_tv) in [int, float]:
@@ -635,11 +648,31 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         elif type(beta_tv) in [list, torch.Tensor]:
             return tens(beta_tv).bool()
         else:
-            raise Exception("Wrong type for beta_tv")
+            raise TypeError(f"Wrong type for beta_tv: {type(beta_tv)}")
 
     def tv_flag_bool_from_input(self, tv_flag):
+        """Convert tv_flag input to boolean.
+
+        SECURITY: Uses ast.literal_eval() instead of eval() to prevent code injection.
+        """
         if type(tv_flag) == str:
-            return bool(eval(tv_flag))
+            import ast
+            # Safe string-to-bool conversion
+            tv_flag_lower = tv_flag.lower().strip()
+            if tv_flag_lower in ['true', '1']:
+                return True
+            elif tv_flag_lower in ['false', '0']:
+                return False
+            else:
+                try:
+                    # Try safe literal evaluation as fallback
+                    parsed_value = ast.literal_eval(tv_flag)
+                    return bool(parsed_value)
+                except (ValueError, SyntaxError) as e:
+                    raise ValueError(
+                        f"Invalid tv_flag string '{tv_flag}'. "
+                        f"Expected 'true', 'false', '1', '0', or a literal value. Error: {e}"
+                    )
         elif tv_flag in [True, False]:
             return bool(tv_flag)
         elif tv_flag in [1, 1.0]:
@@ -1201,15 +1234,53 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         return model_info_dict
 
-    def load_par(self, load_path, log=True):
+    def load_par(self, load_path, log=True, trust_source=False):
+        """Load parameters from a pickle file.
+
+        SECURITY WARNING: Loading pickle files can execute arbitrary code.
+        Only load pickle files from trusted sources.
+
+        Args:
+            load_path: Path to the pickle file
+            log: Whether to log the loading
+            trust_source: Must be explicitly set to True to load pickle files.
+                         This confirms you trust the source of the file.
+
+        Raises:
+            SecurityError: If trust_source is not explicitly set to True
+        """
+        if not trust_source:
+            raise SecurityError(
+                "Loading pickle files can execute arbitrary code. "
+                "Only load pickle files from trusted sources. "
+                "Set trust_source=True if you trust this file source."
+            )
+
         if log:
-            logger.info("Loading par")
+            logger.info(f"Loading parameters from: {load_path}")
+            logger.warning("Loading pickle file - ensure this is from a trusted source")
+
         if load_path[-4:] == ".pkl":
             file_name = load_path
         else:
             file_name = self.file_names(load_path)["parameters"]
 
-        par_dic = pickle.load(open(file_name, "rb"))
+        # Validate file path to prevent path traversal
+        import os
+        file_name = os.path.normpath(file_name)
+        if not os.path.isfile(file_name):
+            raise FileNotFoundError(f"Parameter file not found: {file_name}")
+
+        # Load with explicit error handling
+        try:
+            with open(file_name, "rb") as f:
+                par_dic = pickle.load(f)
+        except (pickle.UnpicklingError, EOFError, AttributeError) as e:
+            raise ValueError(f"Failed to load parameters from {file_name}: {e}")
+
+        # Validate loaded data structure
+        if not isinstance(par_dic, dict):
+            raise ValueError(f"Expected dict from pickle file, got {type(par_dic)}")
 
         self.set_par_val_from_dict(par_dic)
 

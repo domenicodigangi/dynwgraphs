@@ -52,3 +52,33 @@ dynwgraphs/utils/__pycache__/
 dev_utils/__pycache__/
 *pyc
 *__pycache__/
+
+# Security
+*.key
+*.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+.env
+.env.local
+.env.*.local
+secrets.yml
+secrets.yaml
+credentials.json
+*.secret
+*.token
+
+# Security scan reports
+bandit-report.json
+safety-report.json
+pip-audit-report.json
+security-reports/
+
+# Test coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/

@@ -72,9 +72,13 @@ def loaded_test_data(test_data_exists, test_data_file, synthetic_test_data):
     Load test data from file if it exists, otherwise use synthetic data.
 
     Returns a dictionary with Y_T, X_T, N, and T.
+
+    SECURITY: Uses allow_pickle=False to prevent arbitrary code execution
+    when loading numpy files.
     """
     if test_data_exists:
-        data = np.load(test_data_file)
+        # SECURITY: Disable pickle to prevent code execution
+        data = np.load(test_data_file, allow_pickle=False)
         N = data["Y_T"].shape[0]
         T = data["Y_T"].shape[2]
         return {

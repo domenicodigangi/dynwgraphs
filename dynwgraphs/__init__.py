@@ -17,6 +17,7 @@ from .exceptions import (
     DataError,
     OptimizationError,
     IdentificationError,
+    SecurityError,
 )
 
 # from .dirSpW1_dynNets import dirSpW1_staNet
@@ -32,6 +33,7 @@ __all__ = [
     'DataError',
     'OptimizationError',
     'IdentificationError',
+    'SecurityError',
 ] 
 
 
