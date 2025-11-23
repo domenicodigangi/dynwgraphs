@@ -83,13 +83,15 @@ def inv_soft_lu_bound(y, l_limit, u_limit):
     return x
     
 def soft_l_bound(x, l_limit):
-    """ soft lower bound: force  argument into a range bounded from below"""
-    error # function not working as intended. to be checked!
-    if l_limit>0:
-        raise
-    m = torch.nn.Softplus()
-    x = (x - l_limit)
-    return m(x) - m(- l_limit * torch.ones(1))
+    """ soft lower bound: force  argument into a range bounded from below
+
+    Note: This function is not currently implemented correctly.
+    Use soft_lu_bound or soft_lu_bound2 instead.
+    """
+    raise NotImplementedError(
+        "soft_l_bound is not working as intended and needs to be checked. "
+        "Please use soft_lu_bound or soft_lu_bound2 instead."
+    )
 
 
 def size_from_str(pox_str, N):
