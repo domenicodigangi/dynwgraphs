@@ -15,6 +15,7 @@ Author: Domenico Di Gangi
 
 
 """
+import ast
 import torch
 import numpy as np
 import pickle
@@ -97,20 +98,20 @@ class dirGraphs_funs(nn.Module):
         elif (X is None) and (beta is None):
             return False
         elif (X is not None) and (beta is None):
-            raise
+            raise ValueError("Regressors X provided but beta is None — both must be present or both absent")
         elif (X is None) and (beta is not None):
-            raise
+            raise ValueError("Coefficients beta provided but X is None — both must be present or both absent")
 
     def check_reg_and_coeff_shape(self, X_t, beta_t):
         """
         Check that the shape of regressors and coefficients are correct and agree at every time step
         """
         if not (X_t.dim() == 3):
-            raise
+            raise ValueError(f"X_t must be 3-dimensional, got {X_t.dim()} dimensions")
         if not (X_t.shape[0] == X_t.shape[1] == self.N):
-            raise
+            raise ValueError(f"X_t first two dims must equal N={self.N}, got shape {X_t.shape}")
         if beta_t.dim() != 2:
-            raise
+            raise ValueError(f"beta_t must be 2-dimensional, got {beta_t.dim()} dimensions")
 
         if X_t.shape[2] != beta_t.shape[1]:
             raise Exception(f"X_t.shape = {X_t.shape} , beta_t.shape = {beta_t.shape} ")
@@ -143,10 +144,9 @@ class dirGraphs_funs(nn.Module):
                 phi_i, phi_o = splitVec(phi)
                 return phi_i + phi_o.unsqueeze(1)
             elif phi.shape[0] == self.N:
-                raise "Not ready"
-                return phi + phi.unsqueeze(1)
+                raise NotImplementedError("Symmetric phi (N-dimensional) not yet implemented")
             else:
-                raise
+                raise ValueError(f"phi has unexpected size {phi.shape[0]}, expected N={self.N} or 2N={2*self.N}")
 
     def exp_of_fit_plus_reg(self, phi, beta, X_t, ret_log=False, ret_all=False):
         """
@@ -186,8 +186,13 @@ class dirGraphs_funs(nn.Module):
         for t in range(T):
             if beta_T is None:
                 beta_t = None
+            else:
+                beta_t = beta_T[:, t] if beta_T.dim() == 2 else beta_T[:, :, t]
+
             if X_T is None:
                 X_t = None
+            else:
+                X_t = X_T[:, :, :, t]
 
             Y_T[:, :, t] = self.exp_Y(phi_T[:, t], beta_t, X_t)
         return Y_T
@@ -203,10 +208,10 @@ class dirGraphs_funs(nn.Module):
                     par_tens,
                 )
             else:
-                raise
+                raise ValueError(f"inds must be 1-dimensional when par_tens is 2D, got inds.dim()={inds.dim()}")
         else:
-            raise Exception(
-                "Do not know how to handle tensors of parameters with more than 2 dims"
+            raise ValueError(
+                f"Cannot handle parameter tensors with {par_tens.dim()} dimensions (max 2)"
             )
 
     def set_elements_from_par_tens_to_oth_mean_io(self, par_tens, inds):
@@ -275,16 +280,16 @@ class dirGraphs_funs(nn.Module):
         # set the first in parameter to zero
         phi_i, phi_o = splitVec(phi)
         if self.par_vec_id_type != "in_sum_zero":
-            raise
+            raise ValueError(f"identify_phi_io_and_const_unif_beta requires par_vec_id_type='in_sum_zero', got '{self.par_vec_id_type}'")
         else:
             if (~torch.isclose(phi_i.mean(), torch.zeros(1), atol=1e-4)).any():
-                raise
+                raise ValueError(f"phi_i mean should be ~0 after identification, got {phi_i.mean().item()}")
 
         # raise error for cases where the identification problem is not yet clear
         if beta.shape[0] > 1:
-            raise
+            raise NotImplementedError("Identification with beta.shape[0] > 1 not yet implemented")
         if beta.shape[1] > 1:
-            raise
+            raise NotImplementedError("Identification with beta.shape[1] > 1 not yet implemented")
 
         d = phi_o.mean()
         phi_i_out = phi_i
@@ -343,7 +348,8 @@ class dirGraphs_funs(nn.Module):
         if save_path is None:
             save_path = self.get_local_save_path()
         file_name = self.file_names(save_path)["parameters"]
-        pickle.dump(self.par_dict_to_save, open(file_name, "wb"))
+        with open(file_name, "wb") as f:
+            pickle.dump(self.par_dict_to_save, f)
 
     def par_tens_T_to_list(self, ten):
         """
@@ -371,7 +377,7 @@ class dirGraphs_funs(nn.Module):
         elif ls[0].dim() == 2:
             return torch.stack([p.data for p in ls], dim=2)
         else:
-            raise
+            raise ValueError(f"Cannot stack list elements with {ls[0].dim()} dimensions (expected 0, 1, or 2)")
 
     def list_to_time_ser(self, ls, T):
         if ls is not None:
@@ -393,7 +399,7 @@ class dirGraphs_funs(nn.Module):
             elif len(par_list_T) == 1:
                 return par_list_T[0]
             else:
-                raise
+                raise ValueError(f"Parameter is not time-varying but par_list_T has {len(par_list_T)} elements (expected 1)")
 
     def get_reg_t_or_none(self, t, Z_T):
         """regressors are assumed to always be in the form of 4d tensor N x N x N_regressors x T"""
@@ -458,11 +464,11 @@ class dirGraphs_funs(nn.Module):
 
         if avoid_empty:
             if A_T is not None:
-                raise
+                raise ValueError("avoid_empty and A_T cannot both be set — ambiguous empty network handling")
             #  avoid snapshots having completely empty networks
             empty_T = Y_T_sampled.sum(dim=(0, 1)) == 0
             if any(empty_T):
-                logger.info(f"empty mat sampled for some t, adding links")
+                logger.info("empty mat sampled for some t, adding links")
 
                 deg_i_T, deg_o_T = splitVec(strIO_from_tens_T(Y_T_sampled))
                 i_inds = deg_i_T.topk(3).indices
@@ -625,9 +631,9 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
     def tv_flag_list_from_input(self, beta_tv):
         if type(beta_tv) == str:
             if ("[" in beta_tv) and ("]" in beta_tv):
-                return eval(beta_tv)
+                return ast.literal_eval(beta_tv)
             else:
-                return self.tv_flag_list_from_input(eval(beta_tv))
+                return self.tv_flag_list_from_input(ast.literal_eval(beta_tv))
         elif type(beta_tv) == bool:
             return tens([beta_tv for p in range(self.n_reg)]).bool()
         elif type(beta_tv) in [int, float]:
@@ -639,7 +645,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def tv_flag_bool_from_input(self, tv_flag):
         if type(tv_flag) == str:
-            return bool(eval(tv_flag))
+            return bool(ast.literal_eval(tv_flag))
         elif tv_flag in [True, False]:
             return bool(tv_flag)
         elif tv_flag in [1, 1.0]:
@@ -698,7 +704,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.beta_T = None
             if self.beta_tv is not None:
                 if any(self.beta_tv):
-                    raise
+                    raise ValueError("beta_tv is set to time-varying but X_T is None — cannot have time-varying beta without regressors")
         else:
             if self.any_beta_tv():
                 self.beta_T = [
@@ -764,7 +770,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def get_train_obs_t(self, t):
         if t > self.T_train:
-            raise
+            raise ValueError(f"Time step t={t} exceeds training period T_train={self.T_train}")
         else:
             return self.get_obs_t(t)
 
@@ -816,7 +822,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
     def shift_sequence_phi_o_T_beta_const(self, c, x_T):
         if self.reg_cross_unique.sum() > 1:
-            raise
+            raise NotImplementedError("Shifting with more than one cross-unique regressor not yet implemented")
 
         beta_t_all = self.beta_T[0].clone()
         beta_t_all[:, self.reg_cross_unique] = beta_t_all[:, self.reg_cross_unique] + c
@@ -912,11 +918,11 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             self.phi_T[t] = phi_t_id_0
 
             if sum(self.reg_cross_unique) > 1:
-                raise
+                raise NotImplementedError("Identification with more than one cross-unique regressor not yet implemented")
             c = -self.beta_T[0][0] + 1  # phi_o_T_sum/x_T_sum
 
             if len(self.beta_T) > 1:
-                raise
+                raise NotImplementedError("Identification with time-varying beta not yet implemented")
 
             self.shift_sequence_phi_o_T_beta_const(c, x_T)
 
@@ -963,7 +969,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             if all(unique_flag_T):
                 reg_cross_unique[k] = True
             elif np.all(unique_flag_T) > 0.1:
-                raise
+                raise ValueError(f"Regressor {k} is cross-unique for some but not all time steps — ambiguous classification")
         return reg_cross_unique
 
     def run_checks(self):
@@ -986,15 +992,15 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
 
         if est_phi:
             if phi_t is None:
-                raise
+                raise ValueError("est_phi=True but phi_t is None — model has no phi parameters to estimate")
             par_l_to_opt.append(phi_t)
         if est_dist_par:
             if dist_par_un_t is None:
-                raise
+                raise ValueError("est_dist_par=True but dist_par_un_t is None — model has no distribution parameters to estimate")
             par_l_to_opt.append(dist_par_un_t)
         if est_beta:
             if beta_t is None:
-                raise
+                raise ValueError("est_beta=True but beta_t is None — model has no beta parameters to estimate")
             par_l_to_opt.append(beta_t)
 
         def obj_fun():
@@ -1209,7 +1215,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
         else:
             file_name = self.file_names(load_path)["parameters"]
 
-        par_dic = pickle.load(open(file_name, "rb"))
+        with open(file_name, "rb") as f:
+            par_dic = pickle.load(f)  # WARNING: only load pickle files from trusted sources
 
         self.set_par_val_from_dict(par_dic)
 
@@ -1246,7 +1253,7 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                                     f"attribute {k} of wrong shape {a[t].shape}, {v[t].shape}"
                                 )
                     else:
-                        raise
+                        raise TypeError(f"Unsupported attribute type {type(a)} for key '{k}'")
 
         self.par_dict_to_save = dict
         self.start_opt_from_current_par = True
@@ -1436,8 +1443,8 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
                 armod = AutoReg(phi_i_T, order_AR, old_names=False)
                 res = armod.fit()
                 phi_fore[i, :] = res.predict(start=T, end=T + steps_ahead - 1)
-            except:
-                print(phi_i_T)
+            except Exception:
+                logger.error(f"AR fitting failed for parameter index {i}, values: {phi_i_T}")
                 raise
 
         return tens(phi_fore)
@@ -1456,10 +1463,10 @@ class dirGraphs_sequence_ss(dirGraphs_funs):
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
         else:
             if only_present:
-                raise
+                raise ValueError("Cannot use both only_present=True and inds_keep_subset — conflicting link selection")
 
         if steps_ahead == 0:
-            logger.error(f"using contemporaneous parameters for prediction")
+            logger.error("using contemporaneous parameters for prediction")
 
         F_Y_vec_all = np.zeros(0)
         Y_vec_all = np.zeros(0)
@@ -1710,7 +1717,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
                 if self.dist_par_tv:
                     self.dist_par_un_T[0] = self.sd_stat_par_un_dist_par_un["init_val"]
         else:
-            raise
+            raise ValueError(f"Unknown init_sd_type '{self.init_sd_type}', expected 'unc_mean', 'est_joint', or 'est_ss_before'")
 
         for t in range(1, T_last):
             self.update_sd_all_tv_par(t)
@@ -2020,7 +2027,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             logger.error(
                 f"Should forecast time steps not in the train set T_train {self.T_train}, required {t}"
             )
-            raise
+            raise ValueError(f"Cannot forecast training time step t={t}, must be > T_train={self.T_train}")
 
         # Score driven parameters at time t are actually forecasts, since they are computed using obs up to t-1
         phi_t, dist_par_un_t, beta_t = self.get_par_t(t)
@@ -2044,7 +2051,7 @@ class dirGraphs_SD(dirGraphs_sequence_ss):
             inds_keep_subset = torch.ones(self.N, self.N, dtype=bool)
         else:
             if only_present:
-                raise
+                raise ValueError("Cannot use both only_present=True and inds_keep_subset — conflicting link selection")
 
         self.roll_sd_filt(self.T_all)
 
@@ -2389,7 +2396,7 @@ class dirSpW1_sequence_ss(dirGraphs_sequence_ss):
     ):
 
         if not exclude_never_obs_train:
-            raise
+            raise NotImplementedError("Out-of-sample evaluation without excluding never-observed training links not yet implemented")
 
         if t_start is None:
             t_start = self.t_test_1
@@ -2511,7 +2518,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
             if degIO is None:
                 degIO = strIO_from_mat(Y_t)
             if (sum(degIO) == 0) | (sum(phi) == 0):
-                raise
+                raise ValueError("Cannot compute AVGSPACING zero-degree parameters when all degrees or all phi values are zero")
             degI, degO = splitVec(degIO)
             par_i, par_o = splitVec(phi)
             imin = degI[degI != 0].argmin()
@@ -2527,7 +2534,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
                 logger.error(
                     ((par_i - par_i[imin])[diffDegs != 0]) / diffDegs[diffDegs != 0]
                 )
-                raise
+                raise ValueError("avgParStepI is not finite — cannot compute zero-degree in-parameter")
             diffDegs = degO[degO != 0] - degO[degO != 0][omin]
             avgParStepO = torch.mean(
                 (par_o[degO != 0] - par_o[degO != 0][omin])[diffDegs != 0]
@@ -2537,7 +2544,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
                 logger.error(
                     ((par_i - par_i[imin])[diffDegs != 0]) / diffDegs[diffDegs != 0]
                 )
-                raise
+                raise ValueError("avgParStepO is not finite — cannot compute zero-degree out-parameter")
             # subtract a multiple of this average step to fitnesses of smallest node
             zero_deg_par_i = (
                 par_i[degI != 0][imin] - avgParStepI * degI[degI != 0][imin]
@@ -2554,7 +2561,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
             if degIO is None:
                 degIO = strIO_from_mat(Y_t)
             if sum(degIO) == 0:  # | (sum(phi) == 0):
-                raise
+                raise ValueError("Cannot compute EXPECTATION zero-degree parameters when all degrees are zero")
             par_i, par_o = splitVec(phi)
             zero_deg_par_i = -par_o.max() + torch.log(max_prob / N)
             zero_deg_par_o = -par_i.max() + torch.log(max_prob / N)
@@ -2595,7 +2602,7 @@ class dirBin1_sequence_ss(dirGraphs_sequence_ss):
         elif self.phi_T is None:
             return None
         else:
-            raise
+            raise ValueError(f"Unexpected phi_T configuration for start_phi_from_obs")
 
         return phi_0.clone()
 
@@ -2810,4 +2817,4 @@ def get_gen_fit_mod(bin_or_w, ss_or_sd, Y_T, **kwargs):
     elif (bin_or_w == "w") and (ss_or_sd == "sd"):
         return dirSpW1_SD(Y_T, **kwargs)
     else:
-        raise
+        raise ValueError(f"Invalid model type: bin_or_w='{bin_or_w}', ss_or_sd='{ss_or_sd}'. Expected bin_or_w in ('bin', 'w') and ss_or_sd in ('ss', 'sd')")

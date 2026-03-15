@@ -10,23 +10,24 @@ with open('README.rst') as readme_file:
 with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
-requirements = ['Click>=7.0', 'numpy>=1.19', 'pandas>=1.2', 'scipy>=1.6' 'torch' ]
+requirements = ['Click>=7.0', 'numpy>=1.19', 'pandas>=1.2', 'scipy>=1.6', 'torch', 'scikit-learn', 'statsmodels', 'matplotlib']
 
 test_requirements = ['pytest>=3', ]
 
 setup(
     author="Domenico Di Gangi",
     author_email='digangidomenico@gmail.com',
-    python_requires='>=3.6',
+    python_requires='>=3.9',
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
     ],
     description="A package to model dynamical weighted, possibly sparse, graphs a.k.a. known as complex networks",
     entry_points={

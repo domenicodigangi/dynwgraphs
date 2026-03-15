@@ -6,17 +6,9 @@ dynwgraphs
 .. image:: https://img.shields.io/pypi/v/dynwgraphs.svg
         :target: https://pypi.python.org/pypi/dynwgraphs
 
-.. image:: https://img.shields.io/travis/digangidomenico/dynwgraphs.svg
-        :target: https://travis-ci.com/digangidomenico/dynwgraphs
-
 .. image:: https://readthedocs.org/projects/dynwgraphs/badge/?version=latest
         :target: https://dynwgraphs.readthedocs.io/en/latest/?version=latest
         :alt: Documentation Status
-
-
-.. image:: https://pyup.io/repos/github/digangidomenico/dynwgraphs/shield.svg
-     :target: https://pyup.io/repos/github/digangidomenico/dynwgraphs/
-     :alt: Updates
 
 
 
@@ -26,11 +18,23 @@ A package to model dynamical weighted, possibly sparse, graphs a.k.a. known as c
 * Free software: MIT license
 
 
+.. warning::
+
+   **Maintenance Notice (March 2025):** This repository has been updated using Claude Code
+   after a long period since original publication. The changes include bug fixes, security
+   improvements, dependency updates, and CI modernization. **These changes have not been
+   manually tested.** Please review and test thoroughly before using in production.
+
 
 Features
 --------
 
-* TODO
+* Zero-augmented distribution models for sparse weighted directed networks
+* Support for both binary (Bernoulli) and weighted (Gamma, Log-normal) link distributions
+* Static single-snapshot and dynamic score-driven parameter estimation
+* External regressors support with time-varying or constant coefficients
+* Multiple optimization backends (Adam, SGD, L-BFGS, hypergradient methods)
+* PyTorch-based with automatic differentiation for likelihood optimization
 
 Credits
 -------
